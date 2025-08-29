@@ -223,8 +223,8 @@ const AmebaServiceModal: React.FC = () => {
 					<StyledOption disabled>──────────</StyledOption>
 					<StyledOption value="">{amebaSerialPorts.length > 0 ? "" : "No port found"}</StyledOption>
 					{amebaSerialPorts.map((port) => (
-						<StyledOption key={port.port} value={port.port}>
-							{port.port}
+						<StyledOption key={port.path} value={port.path}>
+							{port.path}
 						</StyledOption>
 					))}
 				</SerialPortDropdown>

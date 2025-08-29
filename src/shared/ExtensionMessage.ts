@@ -13,7 +13,7 @@ import { UserInfo } from "./UserInfo"
 
 /* realtek ameba add start*/
 export interface SimplePortInfo {
-	port: string // [核心修改] 將 'path' 改為 'port'，以匹配 serialport-lite 的輸出
+	path: string // [核心修改] 將 'path' 改為 'port'，以匹配 serialport-lite 的輸出
 }
 /* realtek ameba add end*/
 

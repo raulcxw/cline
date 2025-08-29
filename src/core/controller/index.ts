@@ -1354,11 +1354,11 @@ export class Controller {
 		this.cacheService.setGlobalState("amebaSerialPorts", ports)
 		const amebaSelectedSerialPort = this.cacheService.getGlobalStateKey("amebaSelectedSerialPort")
 		if (isFirst && ports.length > 0) {
-			console.log(`[Controller] First scan, selecting port: ${ports[0].port}`)
-			await this.setSelectedAmebaSerialPort(ports[0].port)
+			console.log(`[Controller] First scan, selecting port: ${ports[0].path}`)
+			await this.setSelectedAmebaSerialPort(ports[0].path)
 			return
 		}
-		if (amebaSelectedSerialPort && !ports.some((p) => p.port === amebaSelectedSerialPort)) {
+		if (amebaSelectedSerialPort && !ports.some((p) => p.path === amebaSelectedSerialPort)) {
 			console.log(`[Controller] Selected port ${amebaSelectedSerialPort} is gone. Clearing selection.`)
 			await this.setSelectedAmebaSerialPort(undefined)
 			return
