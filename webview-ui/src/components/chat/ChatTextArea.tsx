@@ -44,7 +44,11 @@ import {
 } from "@/utils/slash-commands"
 import { validateApiConfiguration, validateModelId } from "@/utils/validate"
 import ClineRulesToggleModal from "../cline-rules/ClineRulesToggleModal"
+/* realtek ameba add start*/
+import AmebaServiceModal from "./AmebaServiceModal"
 import ServersToggleModal from "./ServersToggleModal"
+
+/* realtek ameba add end*/
 
 const { MAX_IMAGES_AND_FILES_PER_MESSAGE } = CHAT_CONSTANTS
 
@@ -1679,6 +1683,10 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 						</div>
 					</div>
 				</div>
+
+				{/* realtek ameba add start*/}
+				<AmebaServiceModal />
+				{/* realtek ameba add end*/}
 
 				<ControlsContainer>
 					{/* Always render both components, but control visibility with CSS */}

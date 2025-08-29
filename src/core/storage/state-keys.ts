@@ -4,12 +4,15 @@ import { LanguageModelChatSelector } from "vscode"
 import { AutoApprovalSettings } from "@/shared/AutoApprovalSettings"
 import { BrowserSettings } from "@/shared/BrowserSettings"
 import { ClineRulesToggles } from "@/shared/cline-rules"
+/* realtek ameba add start*/
+import { SimplePortInfo } from "@/shared/ExtensionMessage"
 import { HistoryItem } from "@/shared/HistoryItem"
 import { McpDisplayMode } from "@/shared/McpDisplayMode"
 import { McpMarketplaceCatalog } from "@/shared/mcp"
 import { Mode, OpenaiReasoningEffort } from "@/shared/storage/types"
 import { TelemetrySetting } from "@/shared/TelemetrySetting"
 import { UserInfo } from "@/shared/UserInfo"
+/* realtek ameba add end*/
 
 export type SecretKey =
 	| "apiKey"
@@ -174,6 +177,13 @@ export type GlobalStateKey =
 	| "actModeHuaweiCloudMaasModelInfo"
 	| "actModeVercelAiGatewayModelId"
 	| "actModeVercelAiGatewayModelInfo"
+	/* realtek ameba add start*/
+	| "amebaSdkRoot"
+	| "amebaToolChainEnv"
+	| "amebaIcSelection"
+	| "amebaSerialPorts"
+	| "amebaSelectedSerialPort"
+/* realtek ameba add end*/
 
 export type LocalStateKey = "localClineRulesToggles" | "localCursorRulesToggles" | "localWindsurfRulesToggles" | "workflowToggles"
 
@@ -304,6 +314,13 @@ export interface GlobalState {
 	planModeVercelAiGatewayModelInfo: ModelInfo | undefined
 	actModeVercelAiGatewayModelId: string | undefined
 	actModeVercelAiGatewayModelInfo: ModelInfo | undefined
+	/* realtek ameba add start*/
+	amebaSdkRoot: string | undefined
+	amebaToolChainEnv: string | undefined
+	amebaIcSelection: string | undefined
+	amebaSerialPorts: SimplePortInfo[] | undefined
+	amebaSelectedSerialPort: string | undefined
+	/* realtek ameba add end*/
 }
 
 export interface Secrets {

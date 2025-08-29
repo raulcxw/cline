@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package cline;
+import "cline/common.proto";
+option java_package = "bot.cline.proto";
+option java_multiple_files = true;
+
+service AmebaService {
+  rpc amebaMenuConfig(EmptyRequest) returns (Empty);
+  rpc amebaBuild(EmptyRequest) returns (Empty);
+  rpc amebaFlash(EmptyRequest) returns (Empty);
+  rpc amebaMonitor(EmptyRequest) returns (Empty);
+  rpc amebaUpdateChipSelection(StringRequest) returns (Empty);
+  rpc amebaUpdateSerialPort(StringRequest) returns (Empty) {}
+  rpc amebaRefreshSerialPorts(EmptyRequest) returns (Empty) {}    
+}

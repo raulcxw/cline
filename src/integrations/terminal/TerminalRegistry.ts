@@ -1,4 +1,8 @@
+import * as process from "process"
 import * as vscode from "vscode"
+import { Controller } from "@/core/controller"
+import { HostProvider } from "@/hosts/host-provider"
+import { ShowMessageType } from "@/shared/proto/host/window"
 
 export interface TerminalInfo {
 	terminal: vscode.Terminal
@@ -19,6 +23,10 @@ export interface TerminalInfo {
 export class TerminalRegistry {
 	private static terminals: TerminalInfo[] = []
 	private static nextTerminalId = 1
+
+	/* realtek ameba add start*/
+	private static amebaTerminalInfo: TerminalInfo | null = null
+	/* realtek ameba add end*/
 
 	static createTerminal(cwd?: string | vscode.Uri | undefined, shellPath?: string): TerminalInfo {
 		const terminalOptions: vscode.TerminalOptions = {
@@ -78,4 +86,72 @@ export class TerminalRegistry {
 	private static isTerminalClosed(terminal: vscode.Terminal): boolean {
 		return terminal.exitStatus !== undefined
 	}
+
+	/* realtek ameba add start*/
+	/**
+	 * [新增] 查找一个活动的 "Ameba" 终端，如果不存在则创建一个。
+	 * 这个方法是独立的，不会将创建的终端添加到 this.terminals 列表中。
+	 * @param cwd - The desired working directory.
+	 * @param shellPath - Optional shell path.
+	 * @returns The TerminalInfo for the Ameba terminal.
+	 */
+	static findOrCreateAmebaTerminal(cwd?: string | vscode.Uri | undefined, shellPath?: string): TerminalInfo {
+		// 检查我们自己管理的 Ameba 终端是否存在且未关闭
+		if (
+			TerminalRegistry.amebaTerminalInfo &&
+			!TerminalRegistry.isTerminalClosed(TerminalRegistry.amebaTerminalInfo.terminal)
+		) {
+			console.log("Reusing tracked Ameba terminal.")
+			TerminalRegistry.amebaTerminalInfo.terminal.show()
+			return TerminalRegistry.amebaTerminalInfo
+		}
+
+		// 如果不存在或已关闭，则在 VS Code 的活动终端中查找
+		const existingVscodeTerminal = vscode.window.terminals.find((t) => t.name === "Ameba")
+
+		let terminal: vscode.Terminal
+		if (existingVscodeTerminal) {
+			console.log("Found existing Ameba terminal in VS Code list. Re-attaching.")
+			terminal = existingVscodeTerminal
+		} else {
+			console.log("No active Ameba terminal found. Creating a new one.")
+
+			// --- 这是修改的核心部分 ---
+			let effectiveShellPath = shellPath // 默认使用传入的 shellPath
+
+			// 检查：1. 是否为 Windows 平台  2. shellPath 是否未被提供 (undefined, null, or '')
+			if (process.platform === "win32" && !shellPath) {
+				console.log("Windows platform detected and no shellPath provided. Forcing cmd.exe for compatibility.")
+				// 使用环境变量 %ComSpec% 来找到 cmd.exe 的准确路径，这是最稳妥的方式
+				effectiveShellPath = process.env.ComSpec || "cmd.exe"
+			}
+			// --- 修改结束 ---
+
+			const terminalOptions: vscode.TerminalOptions = {
+				cwd,
+				name: "Ameba", // 使用固定的名字
+				iconPath: new vscode.ThemeIcon("chip"),
+				shellPath: effectiveShellPath, // 使用我们处理过的 shellPath
+			}
+			terminal = vscode.window.createTerminal(terminalOptions)
+		}
+
+		terminal.show() // 确保终端可见
+
+		// 创建新的 TerminalInfo 并存储在专用的静态属性中
+		const newInfo: TerminalInfo = {
+			terminal,
+			busy: false,
+			lastCommand: "",
+			id: TerminalRegistry.nextTerminalId++, // ID 仍然递增以保证唯一性
+			// 注意：这里存储的是原始传入的 shellPath，而不是可能被覆盖的 effectiveShellPath
+			// 这有助于我们了解调用者的原始意图。如果需要存储最终使用的 shell，可以改为 effectiveShellPath。
+			shellPath,
+			lastActive: Date.now(),
+		}
+
+		TerminalRegistry.amebaTerminalInfo = newInfo
+		return newInfo
+	}
+	/* realtek ameba add end*/
 }

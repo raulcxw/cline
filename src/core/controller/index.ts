@@ -2,6 +2,7 @@ import { Anthropic } from "@anthropic-ai/sdk"
 import { buildApiHandler } from "@core/api"
 import { cleanupLegacyCheckpoints } from "@integrations/checkpoints/CheckpointMigration"
 import { downloadTask } from "@integrations/misc/export-markdown"
+import { TerminalManager } from "@integrations/terminal/TerminalManager"
 import { ClineAccountService } from "@services/account/ClineAccountService"
 import { McpHub } from "@services/mcp/McpHub"
 import { ApiProvider, ModelInfo } from "@shared/api"
@@ -14,22 +15,35 @@ import { TelemetrySetting } from "@shared/TelemetrySetting"
 import { UserInfo } from "@shared/UserInfo"
 import { fileExistsAtPath } from "@utils/fs"
 import axios from "axios"
+import { exec } from "child_process"
+import extract from "extract-zip"
+/* realtek ameba add start*/
+import { createWriteStream } from "fs"
 import fs from "fs/promises"
 import pWaitFor from "p-wait-for"
 import * as path from "path"
+import * as tar from "tar" // [新增] 用於解壓 .tar.gz
+import { promisify } from "util" // [新增] 用於 Promisify exec
 import * as vscode from "vscode"
 import { clineEnvConfig } from "@/config"
 import { HostProvider } from "@/hosts/host-provider"
 import { AuthService } from "@/services/auth/AuthService"
 import { PostHogClientProvider, telemetryService } from "@/services/posthog/PostHogClientProvider"
+import type { SimplePortInfo } from "@/shared/ExtensionMessage"
 import { ShowMessageType } from "@/shared/proto/host/window"
 import { getLatestAnnouncementId } from "@/utils/announcements"
 import { getCwd, getDesktopDir } from "@/utils/path"
 import { CacheService, PersistenceErrorEvent } from "../storage/CacheService"
 import { ensureMcpServersDirectoryExists, ensureSettingsDirectoryExists, GlobalFileNames } from "../storage/disk"
 import { Task } from "../task"
+import { type PortInfo, SerialPortManager } from "./ameba/amebaSerialPortManager"
 import { sendMcpMarketplaceCatalogEvent } from "./mcp/subscribeToMcpMarketplaceCatalog"
 import { sendStateUpdate } from "./state/subscribeToState"
+
+const AMEBA_IC_VARIANTS = ["amebadplus", "amebalite", "amebasmart"]
+const AMEBA_SDK_MARKERS = ["Realtek_Disclaimer-2019.pdf", "ameba.bat", "ameba.sh"]
+const IGNORED_DIRS = new Set([".git", ".venv", "build"])
+/* realtek ameba add end*/
 
 /*
 https://github.com/microsoft/vscode-webview-ui-toolkit-samples/blob/main/default/weather-webview/src/providers/WeatherViewProvider.ts
@@ -47,6 +61,15 @@ export class Controller {
 	authService: AuthService
 	readonly cacheService: CacheService
 
+	/* realtek ameba add start*/
+	public readonly amebaTerminalManager: TerminalManager
+	private serialPortManager: SerialPortManager
+	private prebuiltsReminderTimer: NodeJS.Timeout | undefined
+	private isPrebuiltsReminderActive: boolean = false
+	private venvReminderTimer: NodeJS.Timeout | undefined
+	private isVenvReminderActive: boolean = false
+	/* realtek ameba add end*/
+
 	constructor(
 		readonly context: vscode.ExtensionContext,
 		id: string,
@@ -58,11 +81,27 @@ export class Controller {
 		this.cacheService = new CacheService(context)
 		this.authService = AuthService.getInstance(this)
 
+		/* realtek ameba add start*/
+		this.amebaTerminalManager = new TerminalManager()
+		this.serialPortManager = new SerialPortManager(this.handleSerialPortsChange.bind(this))
+		/* realtek ameba add end*/
+
 		// Initialize cache service asynchronously - critical for extension functionality
 		this.cacheService
 			.initialize()
 			.then(() => {
 				this.authService.restoreRefreshTokenAndRetrieveAuthInfo()
+
+				/* realtek ameba add start*/
+				// [修正] 將自動檢測邏輯移動到此處，確保 CacheService 已初始化
+				console.log("[Controller] CacheService initialized. Starting Ameba SDK auto-detection.")
+
+				// 1. 插件启动时，立即执行一次检测
+				this.autoDetectAndSetAmebaSdkRoot()
+
+				// 2. 监听工作区文件夹的变化，当用户打开新项目时再次执行检测
+				this.disposables.push(vscode.workspace.onDidChangeWorkspaceFolders(() => this.autoDetectAndSetAmebaSdkRoot()))
+				/* realtek ameba add end*/
 			})
 			.catch((error) => {
 				console.error("CRITICAL: Failed to initialize CacheService - extension may not function properly:", error)
@@ -118,6 +157,13 @@ export class Controller {
 			}
 		}
 		this.mcpHub.dispose()
+
+		/* realtek ameba add start*/
+		this.amebaTerminalManager.disposeAll && this.amebaTerminalManager.disposeAll()
+		this.serialPortManager.dispose()
+		this.stopPrebuiltsReminder()
+		this.stopVenvReminder()
+		/* realtek ameba add end*/
 
 		console.error("Controller disposed")
 	}
@@ -624,6 +670,14 @@ export class Controller {
 		const localCursorRulesToggles = this.cacheService.getWorkspaceStateKey("localCursorRulesToggles")
 		const workflowToggles = this.cacheService.getWorkspaceStateKey("workflowToggles")
 
+		/* realtek ameba add start*/
+		const amebaSdkRoot = this.cacheService.getGlobalStateKey("amebaSdkRoot")
+		const amebaIcSelection = this.cacheService.getGlobalStateKey("amebaIcSelection")
+		const amebaSerialPorts = this.cacheService.getGlobalStateKey("amebaSerialPorts")
+		const amebaSelectedSerialPort = this.cacheService.getGlobalStateKey("amebaSelectedSerialPort")
+		const amebaToolChainEnv = this.cacheService.getGlobalStateKey("amebaToolChainEnv")
+		/* realtek ameba add end*/
+
 		const currentTaskItem = this.task?.taskId ? (taskHistory || []).find((item) => item.id === this.task?.taskId) : undefined
 		const checkpointTrackerErrorMessage = this.task?.taskState.checkpointTrackerErrorMessage
 		const clineMessages = this.task?.messageStateHandler.getClineMessages() || []
@@ -681,6 +735,14 @@ export class Controller {
 			mcpResponsesCollapsed,
 			terminalOutputLineLimit,
 			customPrompt,
+			/* realtek ameba add start*/
+			amebaSdkRoot: amebaSdkRoot as string | undefined,
+			amebaIcSelection: (amebaIcSelection as string | undefined) || AMEBA_IC_VARIANTS[0], // 提供一个默认值
+			amebaIcVariants: AMEBA_IC_VARIANTS,
+			amebaSerialPorts: (amebaSerialPorts as PortInfo[] | undefined) || [],
+			amebaSelectedSerialPort: amebaSelectedSerialPort as string | undefined,
+			amebaToolChainEnv: amebaToolChainEnv as string | undefined,
+			/* realtek ameba add end*/
 		}
 	}
 
@@ -720,4 +782,594 @@ export class Controller {
 		this.cacheService.setGlobalState("taskHistory", history)
 		return history
 	}
+
+	/* realtek ameba add start*/
+	public async getAmebaSdkRoot(): Promise<string | undefined> {
+		return this.cacheService.getGlobalStateKey("amebaSdkRoot")
+	}
+
+	public async getAmebaIcSelection(): Promise<string> {
+		const selection = this.cacheService.getGlobalStateKey("amebaIcSelection")
+		return selection || AMEBA_IC_VARIANTS[0] // 确保总有一个默认值返回
+	}
+
+	public async getSelectedAmebaSerialPort(): Promise<string | undefined> {
+		return this.cacheService.getGlobalStateKey("amebaSelectedSerialPort")
+	}
+
+	public async setAmebaSdkRoot(sdkRoot: string | undefined): Promise<void> {
+		const currentSdkRoot = await this.getAmebaSdkRoot()
+		if (!sdkRoot) {
+			console.log(`[Controller] Ameba SDK root undefine updated to: ${sdkRoot}`)
+			HostProvider.window.showMessage({
+				type: ShowMessageType.WARNING,
+				message: "Ameba SDK Search Failed, please open Ameba SDK Folder.",
+			})
+		}
+
+		if (sdkRoot !== currentSdkRoot) {
+			this.cacheService.setGlobalState("amebaSdkRoot", sdkRoot)
+			console.log(`[Controller] Ameba SDK root updated to: ${sdkRoot}`)
+
+			if (sdkRoot) {
+				HostProvider.window.showMessage({
+					type: ShowMessageType.INFORMATION,
+					message: `Ameba SDK path automatically set to: ${sdkRoot}`,
+				})
+			}
+
+			await this.postStateToWebview()
+		}
+	}
+
+	public async setAmebaIcSelection(icSelection: string): Promise<void> {
+		this.cacheService.setGlobalState("amebaIcSelection", icSelection)
+		console.log(`[Controller] Ameba IC selection updated to: ${icSelection}`)
+		await this.postStateToWebview()
+	}
+
+	private async isValidAmebaSdkDir(dirPath: string): Promise<boolean> {
+		try {
+			const checks = AMEBA_SDK_MARKERS.map((markerFile) => fileExistsAtPath(path.join(dirPath, markerFile)))
+			const results = await Promise.all(checks)
+			return results.every(Boolean)
+		} catch (error) {
+			return false
+		}
+	}
+
+	private async findAmebaSdkRoot(searchDir: string): Promise<string | undefined> {
+		console.log(`[Ameba SDK] Starting search in: ${searchDir}`)
+		const queue: string[] = [searchDir]
+		const visited = new Set<string>()
+
+		while (queue.length > 0) {
+			const currentDir = queue.shift()!
+			if (visited.has(currentDir)) {
+				continue
+			}
+			visited.add(currentDir)
+
+			if (await this.isValidAmebaSdkDir(currentDir)) {
+				console.log(`[Ameba SDK] Found valid SDK root at: ${currentDir}`)
+				return currentDir
+			}
+
+			try {
+				const entries = await fs.readdir(currentDir, { withFileTypes: true })
+				for (const entry of entries) {
+					if (entry.isDirectory() && !IGNORED_DIRS.has(entry.name)) {
+						queue.push(path.join(currentDir, entry.name))
+					}
+				}
+			} catch (error) {
+				// Ignore errors
+			}
+		}
+
+		console.log(`[Ameba SDK] Search finished. No SDK root found in: ${searchDir}`)
+		return undefined
+	}
+
+	private async autoDetectAndSetAmebaSdkRoot(): Promise<void> {
+		// [修改] 停止所有提醒循環
+		this.stopPrebuiltsReminder()
+		this.stopVenvReminder()
+
+		const response = await HostProvider.workspace.getWorkspacePaths({})
+		const workspaceFolders = response.paths
+		if (!workspaceFolders || workspaceFolders.length === 0) {
+			console.log("[Ameba SDK] No workspace folder open. Skipping auto-detection.")
+			await this.setAmebaSdkRoot(undefined)
+			await this.setAmebaToolChainEnv(undefined)
+			return
+		}
+
+		const rootPath = workspaceFolders[0]
+		const foundSdkPath = await this.findAmebaSdkRoot(rootPath)
+
+		if (foundSdkPath) {
+			await this.setAmebaSdkRoot(foundSdkPath)
+			await this.checkAndSetupAmebaToolChainEnv(foundSdkPath)
+		} else {
+			await this.setAmebaSdkRoot(undefined)
+			await this.setAmebaToolChainEnv(undefined)
+			HostProvider.window.showMessage({
+				type: ShowMessageType.WARNING,
+				message: "Ameba SDK not found in the workspace. Please open an Ameba SDK project or set the path manually.",
+			})
+		}
+	}
+
+	public async setAmebaToolChainEnv(envPath: string | undefined): Promise<void> {
+		const currentPath = this.cacheService.getGlobalStateKey("amebaToolChainEnv")
+		if (envPath !== currentPath) {
+			this.cacheService.setGlobalState("amebaToolChainEnv", envPath)
+			console.log(`[Controller] Ameba Toolchain Env Path updated to: ${envPath}`)
+			if (envPath) {
+				// 只要工具鏈設定成功，就停止所有提醒
+				this.stopPrebuiltsReminder()
+				this.stopVenvReminder()
+			}
+			await this.postStateToWebview()
+		}
+	}
+
+	private async checkAndSetupAmebaToolChainEnv(sdkRoot: string): Promise<void> {
+		const platform = process.platform
+		let scriptName: string,
+			urlVarName: string,
+			aliyunUrlVarName: string,
+			prebuiltDirPrefix: string,
+			defaultToolchainDir: string
+
+		if (platform === "win32") {
+			scriptName = "ameba.bat"
+			urlVarName = "PREBUILTS_WIN_URL"
+			aliyunUrlVarName = "PREBUILTS_WIN_URL_ALIYUN"
+			prebuiltDirPrefix = "prebuilts-win"
+			defaultToolchainDir = "C:\\rtk-toolchain"
+		} else if (platform === "linux") {
+			scriptName = "ameba.sh"
+			urlVarName = "PREBUILTS_LINUX_URL"
+			aliyunUrlVarName = "PREBUILTS_LINUX_URL_ALIYUN"
+			prebuiltDirPrefix = "prebuilts-linux"
+			defaultToolchainDir = "/opt/rtk-toolchain"
+		} else {
+			console.log(`[Ameba Env] Skipping PreBuilts check on unsupported platform: ${platform}.`)
+			return
+		}
+
+		const scriptPath = path.join(sdkRoot, scriptName)
+		if (!(await fileExistsAtPath(scriptPath))) {
+			console.warn(`[Ameba Env] ${scriptName} not found in ${sdkRoot}. Cannot check environment.`)
+			await this.setAmebaToolChainEnv(undefined)
+			return
+		}
+
+		try {
+			const content = await fs.readFile(scriptPath, "utf-8")
+			const parseVar = (varName: string): string | undefined => {
+				const regex =
+					platform === "win32" ? new RegExp(`set\\s+"?${varName}=(.*?)"?$`, "im") : new RegExp(`^${varName}=(.*)$`, "m")
+				const match = content.match(regex)
+				return match ? match[1].trim().replace(/['"]/g, "") : undefined
+			}
+
+			const prebuiltsVersion = parseVar("PREBUILTS_VERSION")
+			const prebuiltsUrl = parseVar(urlVarName)
+			const prebuiltsUrlAliyun = parseVar(aliyunUrlVarName)
+
+			if (!prebuiltsVersion || !(prebuiltsUrl || prebuiltsUrlAliyun)) {
+				console.error(`[Ameba Env] Could not parse required variables from ${scriptName}.`)
+				await this.setAmebaToolChainEnv(undefined)
+				return
+			}
+
+			const envVarPath = process.env.RTK_TOOLCHAIN_DIR
+			const scriptDefaultDir = parseVar("RTK_TOOLCHAIN_DIR")
+			const baseToolchainDir = envVarPath || scriptDefaultDir || defaultToolchainDir
+
+			const prebuiltsDir = path.join(baseToolchainDir, `${prebuiltDirPrefix}-${prebuiltsVersion}`)
+
+			if (await fileExistsAtPath(prebuiltsDir)) {
+				console.log(`[Ameba Env] Toolchain Dir found at: ${prebuiltsDir}`)
+				this.stopPrebuiltsReminder()
+				const venvPath = path.join(sdkRoot, ".venv")
+				if (!(await fileExistsAtPath(venvPath))) {
+					console.log(`[Ameba Env] Toolchain found, but .venv is missing in ${sdkRoot}.`)
+					if (this.isVenvReminderActive) {
+						console.log("[Ameba Env] .venv reminder loop is already active. Skipping new prompt.")
+						return
+					}
+					this.isVenvReminderActive = true
+					console.log("[Ameba Env] Starting .venv setup reminder loop.")
+					await this.promptAndRemindToSetupVenv(sdkRoot, baseToolchainDir, prebuiltsDir, platform)
+				} else {
+					console.log(`[Ameba Env] Toolchain and .venv found. Environment is ready.`)
+					this.stopVenvReminder()
+					await this.setAmebaToolChainEnv(baseToolchainDir)
+				}
+			} else {
+				console.log(`[Ameba Env] Toolchain Dir not found at: ${prebuiltsDir}.`)
+				await this.setAmebaToolChainEnv(undefined)
+				if (this.isPrebuiltsReminderActive) {
+					console.log("[Ameba Env] Reminder loop is already active. Skipping new prompt.")
+					return
+				}
+				this.isPrebuiltsReminderActive = true
+				console.log("[Ameba Env] Starting prebuilts installation reminder loop.")
+				const urls: string[] = []
+				if (prebuiltsUrl) {
+					//urls.push(prebuiltsUrl)
+				}
+				if (prebuiltsUrlAliyun) {
+					urls.push(prebuiltsUrlAliyun)
+				}
+				this.promptAndRemindToInstallPrebuilts(prebuiltsVersion, baseToolchainDir, urls, prebuiltsDir, sdkRoot, platform)
+			}
+		} catch (error) {
+			console.error(`Error checking Ameba SDK toolchain for ${platform}:`, error)
+			HostProvider.window.showMessage({ type: ShowMessageType.ERROR, message: "Failed to check Ameba SDK toolchain." })
+			await this.setAmebaToolChainEnv(undefined)
+		}
+	}
+
+	private stopPrebuiltsReminder(): void {
+		if (this.prebuiltsReminderTimer) {
+			clearTimeout(this.prebuiltsReminderTimer)
+			this.prebuiltsReminderTimer = undefined
+		}
+		if (this.isPrebuiltsReminderActive) {
+			this.isPrebuiltsReminderActive = false
+			console.log("[Ameba Env] Prebuilts installation reminder loop stopped.")
+		}
+	}
+
+	// [新增] 停止 Venv 設定提醒的循環
+	private stopVenvReminder(): void {
+		if (this.venvReminderTimer) {
+			clearTimeout(this.venvReminderTimer)
+			this.venvReminderTimer = undefined
+		}
+		if (this.isVenvReminderActive) {
+			this.isVenvReminderActive = false
+			console.log("[Ameba Env] Python .venv setup reminder loop stopped.")
+		}
+	}
+
+	private async promptAndRemindToInstallPrebuilts(
+		version: string,
+		baseToolchainDir: string,
+		urls: string[],
+		finalDirPath: string,
+		sdkRoot: string,
+		platform: NodeJS.Platform,
+	): Promise<void> {
+		if (!this.isPrebuiltsReminderActive) {
+			return
+		}
+		if (await fileExistsAtPath(finalDirPath)) {
+			console.log("[Ameba Env] Prebuilts found during reminder check. Stopping loop.")
+			this.stopPrebuiltsReminder()
+			await this.checkAndSetupAmebaToolChainEnv(sdkRoot)
+			return
+		}
+		const response = await HostProvider.window.showMessage({
+			type: ShowMessageType.INFORMATION,
+			message: `Ameba Prebuilts (v${version}) is not found. Do you want to download and install it to ${baseToolchainDir}?`,
+			options: {
+				modal: false,
+				items: ["Install Now"],
+			},
+		})
+		if (response.selectedOption === "Install Now") {
+			this.stopPrebuiltsReminder()
+			await this.downloadAndInstallPrebuilts(urls, baseToolchainDir, finalDirPath, sdkRoot, platform)
+		} else {
+			if (this.isPrebuiltsReminderActive) {
+				console.log("[Ameba Env] User dismissed the prompt. Will remind again in 20 seconds.")
+				if (this.prebuiltsReminderTimer) {
+					clearTimeout(this.prebuiltsReminderTimer)
+				}
+				this.prebuiltsReminderTimer = setTimeout(
+					() =>
+						this.promptAndRemindToInstallPrebuilts(version, baseToolchainDir, urls, finalDirPath, sdkRoot, platform),
+					20_000,
+				)
+			}
+		}
+	}
+
+	// [修改] 重構為具備提醒功能的函式
+	private async promptAndRemindToSetupVenv(
+		sdkRoot: string,
+		baseToolchainDir: string,
+		finalPrebuiltsPath: string,
+		platform: NodeJS.Platform,
+	): Promise<void> {
+		if (!this.isVenvReminderActive) {
+			return
+		}
+		const venvPath = path.join(sdkRoot, ".venv")
+		if (await fileExistsAtPath(venvPath)) {
+			console.log("[Ameba Env] .venv found during reminder check. Stopping loop.")
+			this.stopVenvReminder()
+			await this.setAmebaToolChainEnv(baseToolchainDir)
+			return
+		}
+		const response = await HostProvider.window.showMessage({
+			type: ShowMessageType.INFORMATION,
+			message: "Python virtual environment (.venv) is not found in Ameba SDK folder.",
+			options: {
+				modal: false,
+				detail: "This is required for building and other tasks. Would you like to set it up now?",
+				items: ["Setup Now"],
+			},
+		})
+		if (response.selectedOption === "Setup Now") {
+			this.stopVenvReminder()
+			try {
+				await vscode.window.withProgress(
+					{
+						location: vscode.ProgressLocation.Notification,
+						title: "Setting up Python Environment",
+						cancellable: true,
+					},
+					async (progress, token) => {
+						await this.setupPythonEnvironment(sdkRoot, finalPrebuiltsPath, platform, progress, token)
+					},
+				)
+				HostProvider.window.showMessage({
+					type: ShowMessageType.INFORMATION,
+					message: "Ameba Python virtual environment created successfully.",
+				})
+				await this.setAmebaToolChainEnv(baseToolchainDir)
+			} catch (error) {
+				const errorMessage = error instanceof Error ? error.message : String(error)
+				console.error("Failed to setup Ameba Python environment:", errorMessage)
+				HostProvider.window.showMessage({
+					type: ShowMessageType.ERROR,
+					message: `Failed to create Ameba Python virtual environment: ${errorMessage}`,
+				})
+				// [新增] 如果安裝失敗，重新啟動提醒循環
+				if (!this.isVenvReminderActive) {
+					this.isVenvReminderActive = true
+					this.promptAndRemindToSetupVenv(sdkRoot, baseToolchainDir, finalPrebuiltsPath, platform)
+				}
+			}
+		} else {
+			if (this.isVenvReminderActive) {
+				console.log("[Ameba Env] User dismissed the .venv setup prompt. Will remind again in 20 seconds.")
+				if (this.venvReminderTimer) {
+					clearTimeout(this.venvReminderTimer)
+				}
+				this.venvReminderTimer = setTimeout(
+					() => this.promptAndRemindToSetupVenv(sdkRoot, baseToolchainDir, finalPrebuiltsPath, platform),
+					20_000,
+				)
+			}
+		}
+	}
+
+	private executeCommandInOutputChannel(
+		command: string,
+		channel: vscode.OutputChannel,
+		options?: { cwd?: string },
+	): Promise<void> {
+		return new Promise((resolve, reject) => {
+			channel.appendLine(`> Executing: ${command}` + (options?.cwd ? ` in ${options.cwd}` : ""))
+			const process = exec(command, options)
+			process.stdout?.on("data", (data) => channel.append(data.toString()))
+			process.stderr?.on("data", (data) => channel.append(data.toString()))
+			process.on("close", (code) => {
+				if (code === 0) {
+					channel.appendLine(`> Command finished successfully.\n`)
+					resolve()
+				} else {
+					const errorMsg = `> Command failed with exit code ${code}. Check output for details.`
+					channel.appendLine(errorMsg)
+					reject(new Error(errorMsg))
+				}
+			})
+			process.on("error", (err) => {
+				channel.appendLine(`> Failed to start command: ${err.message}`)
+				reject(err)
+			})
+		})
+	}
+
+	private async setupPythonEnvironment(
+		sdkRoot: string,
+		toolchainDir: string,
+		platform: NodeJS.Platform,
+		progress: vscode.Progress<{ message?: string; increment?: number }>,
+		token: vscode.CancellationToken,
+	): Promise<void> {
+		const channel = vscode.window.createOutputChannel("Ameba Environment Setup")
+		channel.show(true)
+		const isWindows = platform === "win32"
+		const pythonFolderName = "python3"
+		const pythonExeName = isWindows ? "python.exe" : "python"
+		const portablePythonPath = path.join(toolchainDir, pythonFolderName, pythonExeName)
+		const venvPath = path.join(sdkRoot, ".venv")
+		const requirementsPath = path.join(sdkRoot, "tools", "requirements.txt")
+		if (!(await fileExistsAtPath(portablePythonPath))) {
+			throw new Error(`Portable Python not found at: ${portablePythonPath}`)
+		}
+		if (!(await fileExistsAtPath(requirementsPath))) {
+			channel.appendLine(`[Warning] requirements.txt not found at: ${requirementsPath}. Skipping dependency installation.`)
+			return
+		}
+		if (token.isCancellationRequested) {
+			return
+		}
+		progress.report({ increment: 15, message: "Cleaning up old environment..." })
+		channel.appendLine(`[Step 1/3] Removing existing .venv directory at ${venvPath}`)
+		if (await fileExistsAtPath(venvPath)) {
+			await fs.rm(venvPath, { recursive: true, force: true })
+		}
+		channel.appendLine("Cleanup complete.")
+		if (token.isCancellationRequested) {
+			return
+		}
+		progress.report({ increment: 25, message: "Creating Python virtual environment..." })
+		channel.appendLine("[Step 2/3] Creating new Python virtual environment...")
+		const venvModuleName = isWindows ? "virtualenv" : "venv"
+		const createVenvCommand = `"${portablePythonPath}" -m ${venvModuleName} "${venvPath}"`
+		await this.executeCommandInOutputChannel(createVenvCommand, channel)
+		if (token.isCancellationRequested) {
+			return
+		}
+		progress.report({ increment: 20, message: "Installing dependencies from requirements.txt..." })
+		channel.appendLine("[Step 3/3] Installing dependencies...")
+		const venvPythonPath = path.join(venvPath, isWindows ? "Scripts" : "bin", "python")
+		const installDepsCommand = `"${venvPythonPath}" -m pip install -r "${requirementsPath}"`
+		await this.executeCommandInOutputChannel(installDepsCommand, channel)
+		channel.appendLine("\nPython virtual environment setup complete!")
+		progress.report({ increment: 5, message: "Setup complete!" })
+	}
+
+	private async downloadAndInstallPrebuilts(
+		urls: string[],
+		targetUnzipDir: string,
+		finalDirPath: string,
+		sdkRoot: string,
+		platform: NodeJS.Platform,
+	): Promise<void> {
+		let lastError: Error | undefined
+		const isWindows = platform === "win32"
+		for (const url of urls) {
+			try {
+				await vscode.window.withProgress(
+					{
+						location: vscode.ProgressLocation.Notification,
+						title: "Installing Ameba Environment",
+						cancellable: true,
+					},
+					async (progress, token) => {
+						token.onCancellationRequested(() => console.log("User cancelled the environment installation."))
+						progress.report({ message: `Downloading from ${new URL(url).hostname}...`, increment: 0 })
+						const tempDir = await this.ensureCacheDirectoryExists()
+						const archiveFileName = path.basename(url)
+						const tempArchivePath = path.join(tempDir, archiveFileName)
+						const writer = createWriteStream(tempArchivePath)
+						let lastDownloadPercent = 0
+						const response = await axios({
+							method: "get",
+							url: url,
+							responseType: "stream",
+							onDownloadProgress: (e) => {
+								if (e.total && !token.isCancellationRequested) {
+									const percent = Math.floor((e.loaded / e.total) * 50)
+									const increment = percent - lastDownloadPercent
+									if (increment > 0) {
+										const speed = e.rate ? `${(e.rate / 1024 / 1024).toFixed(2)} MB/s` : ""
+										progress.report({ increment, message: `Downloading... ${speed}` })
+										lastDownloadPercent = percent
+									}
+								}
+							},
+						})
+						response.data.pipe(writer)
+						await new Promise<void>((resolve, reject) => {
+							writer.on("finish", resolve)
+							writer.on("error", reject)
+							token.onCancellationRequested(() => {
+								writer.close()
+								reject(new Error("Download cancelled by user."))
+							})
+						})
+						if (token.isCancellationRequested) {
+							await fs.unlink(tempArchivePath).catch(() => {})
+							return
+						}
+						progress.report({ increment: 0, message: `Extracting ${archiveFileName}...` })
+						await fs.mkdir(targetUnzipDir, { recursive: true })
+						if (archiveFileName.endsWith(".zip")) {
+							await extract(tempArchivePath, { dir: targetUnzipDir })
+						} else if (archiveFileName.endsWith(".tar.gz")) {
+							await tar.x({ file: tempArchivePath, cwd: targetUnzipDir })
+						} else {
+							throw new Error(`Unsupported archive format: ${archiveFileName}`)
+						}
+						progress.report({ increment: 20, message: "Extraction complete." })
+						await fs.unlink(tempArchivePath)
+						if (token.isCancellationRequested) {
+							return
+						}
+						if (!isWindows) {
+							progress.report({ message: "Setting permissions..." })
+							console.log(`[Ameba Env] Applying executable permissions to ${finalDirPath}`)
+							const channel = vscode.window.createOutputChannel("Ameba Environment Setup")
+							channel.show(true)
+							try {
+								await this.executeCommandInOutputChannel(`chmod -R +x "${finalDirPath}"`, channel)
+							} catch (permError) {
+								console.error("Failed to set permissions, continuing anyway.", permError)
+								channel.appendLine(
+									`[Warning] Failed to set permissions for ${finalDirPath}. You may need to set them manually.`,
+								)
+							}
+						}
+						await this.setupPythonEnvironment(sdkRoot, finalDirPath, platform, progress, token)
+						if (token.isCancellationRequested) {
+							return
+						}
+						HostProvider.window.showMessage({
+							type: ShowMessageType.INFORMATION,
+							message: `Ameba toolchain and Python environment installed successfully at ${finalDirPath}`,
+						})
+						await this.setAmebaToolChainEnv(targetUnzipDir)
+					},
+				)
+				return
+			} catch (error) {
+				console.error(`Failed to download or install from ${url}:`, error)
+				lastError = error instanceof Error ? error : new Error(String(error))
+			}
+		}
+		if (lastError) {
+			HostProvider.window.showMessage({
+				type: ShowMessageType.ERROR,
+				message: `Failed to install Ameba toolchain. Error: ${lastError.message}`,
+			})
+			await this.setAmebaToolChainEnv(undefined)
+			if (!this.isPrebuiltsReminderActive) {
+				this.isPrebuiltsReminderActive = true
+				const version = path.basename(finalDirPath).split("-").pop() || ""
+				this.promptAndRemindToInstallPrebuilts(version, targetUnzipDir, urls, finalDirPath, sdkRoot, platform)
+			}
+		}
+	}
+
+	public async forceRefreshSerialPorts(): Promise<void> {
+		if (this.serialPortManager) {
+			await this.serialPortManager.forceCheckForPortChanges()
+		}
+	}
+
+	private async handleSerialPortsChange(ports: PortInfo[], isFirst: boolean): Promise<void> {
+		console.log("[Controller] Handling serial port changes...", { isFirst, portCount: ports.length })
+		this.cacheService.setGlobalState("amebaSerialPorts", ports)
+		const amebaSelectedSerialPort = this.cacheService.getGlobalStateKey("amebaSelectedSerialPort")
+		if (isFirst && ports.length > 0) {
+			console.log(`[Controller] First scan, selecting port: ${ports[0].port}`)
+			await this.setSelectedAmebaSerialPort(ports[0].port)
+			return
+		}
+		if (amebaSelectedSerialPort && !ports.some((p) => p.port === amebaSelectedSerialPort)) {
+			console.log(`[Controller] Selected port ${amebaSelectedSerialPort} is gone. Clearing selection.`)
+			await this.setSelectedAmebaSerialPort(undefined)
+			return
+		}
+		await this.postStateToWebview()
+	}
+
+	public async setSelectedAmebaSerialPort(portPath: string | undefined): Promise<void> {
+		this.cacheService.setGlobalState("amebaSelectedSerialPort", portPath)
+		console.log(`[Controller] Ameba serial port selection updated to: ${portPath}`)
+		await this.postStateToWebview()
+	}
+	/* realtek ameba add end*/
 }

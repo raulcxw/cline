@@ -11,6 +11,12 @@ import { Mode, OpenaiReasoningEffort } from "./storage/types"
 import { TelemetrySetting } from "./TelemetrySetting"
 import { UserInfo } from "./UserInfo"
 
+/* realtek ameba add start*/
+export interface SimplePortInfo {
+	port: string // [核心修改] 將 'path' 改為 'port'，以匹配 serialport-lite 的輸出
+}
+/* realtek ameba add end*/
+
 // webview will hold state
 export interface ExtensionMessage {
 	type: "grpc_response" // New type for gRPC responses
@@ -71,6 +77,14 @@ export interface ExtensionState {
 	focusChainSettings: FocusChainSettings
 	focusChainFeatureFlagEnabled?: boolean
 	customPrompt?: string
+	/* realtek ameba add start*/
+	amebaSdkRoot?: string // Ameba SDK 的根目录路径
+	amebaToolChainEnv?: string // Ameba Toolchain 目录路径
+	amebaIcSelection?: string // 当前选择的 IC 型号 (例如 "amebadplus")
+	amebaIcVariants: string[] // 所有支持的 IC 型号列表，用于前端下拉菜单
+	amebaSerialPorts: SimplePortInfo[]
+	amebaSelectedSerialPort?: string
+	/* realtek ameba add end*/
 }
 
 export interface ClineMessage {

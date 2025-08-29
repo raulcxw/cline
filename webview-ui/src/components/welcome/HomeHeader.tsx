@@ -1,7 +1,11 @@
 import { EmptyRequest } from "@shared/proto/cline/common"
 import ClineLogoVariable from "@/assets/ClineLogoVariable"
+/* realtek ameba add start*/
+import RtkLogoVariable from "@/assets/RTKLogoVariable"
 import HeroTooltip from "@/components/common/HeroTooltip"
 import { UiServiceClient } from "@/services/grpc-client"
+
+/* realtek ameba add end*/
 
 interface HomeHeaderProps {
 	shouldShowQuickWins?: boolean
@@ -18,9 +22,21 @@ const HomeHeader = ({ shouldShowQuickWins = false }: HomeHeaderProps) => {
 
 	return (
 		<div className="flex flex-col items-center mb-5">
-			<div className="my-5">
-				<ClineLogoVariable className="size-16" />
+			{/* realtek ameba add start*/}
+			<div className="my-5 flex items-center justify-center gap-4">
+				<ClineLogoVariable style={{ height: "42px", width: "auto" }} />
+
+				{/* 3. 在兩個 Logo 之間加入一個分隔符 */}
+				<span
+					className="text-3xl font-light"
+					style={{ color: "var(--vscode-disabledForeground)", transform: "translateY(-2px)" }}>
+					&times;
+				</span>
+
+				{/* 4. 加入 RTK Logo 並調整其大小以求視覺平衡 */}
+				<RtkLogoVariable style={{ height: "42px", width: "auto" }} />
 			</div>
+			{/* realtek ameba add end*/}
 			<div className="text-center flex items-center justify-center">
 				<h2 className="m-0 text-lg">{"What can I do for you?"}</h2>
 				<HeroTooltip

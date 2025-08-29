@@ -308,6 +308,44 @@ export class TerminalManager {
 		return newTerminalInfo
 	}
 
+	/* realtek ameba add start*/
+	/**
+	 * [新增] 获取或创建一个专用于 Ameba 任务的终端。
+	 * 此终端独立于通用终端池，并会自动执行初始化脚本。
+	 * @param cwd - The SDK root directory where initialization should occur.
+	 * @returns A promise that resolves to the TerminalInfo for the Ameba terminal.
+	 */
+	async getOrCreateAmebaTerminal(cwd: string): Promise<TerminalInfo> {
+		console.log("[TerminalManager] Requesting dedicated Ameba terminal.")
+
+		// 1. 调用 Registry 的新方法来获取或创建终端实例
+		const terminalInfo = TerminalRegistry.findOrCreateAmebaTerminal(cwd)
+		const terminal = terminalInfo.terminal
+
+		// 2. 标记为繁忙，直到初始化完成
+		terminalInfo.busy = true
+
+		// 3. 发送初始化命令 (这部分逻辑从旧的 getAmebaTerminal 迁移至此)
+		// 命令1: 进入指定目录 (总是先执行，确保环境正确)
+		const cdCommand = `cd "${cwd}"`
+		terminal.sendText(cdCommand, true)
+		console.log(`[AmebaTerminal] Sent: ${cdCommand}`)
+
+		// 命令2: 执行初始化脚本 (跨平台兼容)
+		const isWindows = process.platform === "win32"
+		const scriptName = isWindows ? "ameba.bat" : "./ameba.sh"
+		terminal.sendText(scriptName, true)
+		console.log(`[AmebaTerminal] Sent: ${scriptName}`)
+
+		// 4. 更新元数据并标记为空闲，准备接收后续命令
+		terminalInfo.lastCommand = `${cdCommand} && ${scriptName}`
+		terminalInfo.lastActive = Date.now()
+		terminalInfo.busy = false // 初始化完成，终端可用
+
+		return terminalInfo
+	}
+	/* realtek ameba add end*/
+
 	getTerminals(busy: boolean): { id: number; lastCommand: string }[] {
 		return Array.from(this.terminalIds)
 			.map((id) => TerminalRegistry.getTerminal(id))

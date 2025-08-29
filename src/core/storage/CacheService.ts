@@ -779,6 +779,14 @@ export class CacheService {
 			mcpMarketplaceCatalog: state.mcpMarketplaceCatalog,
 			customPrompt: state.customPrompt,
 
+			/* realtek ameba add start*/
+			amebaSdkRoot: state.amebaSdkRoot,
+			amebaToolChainEnv: state.amebaToolChainEnv,
+			amebaIcSelection: state.amebaIcSelection,
+			amebaSerialPorts: state.amebaSerialPorts,
+			amebaSelectedSerialPort: state.amebaSelectedSerialPort,
+			/* realtek ameba add end*/
+
 			// Plan mode configuration updates
 			planModeApiProvider,
 			planModeApiModelId,
