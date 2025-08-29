@@ -1351,19 +1351,35 @@ export class Controller {
 
 	private async handleSerialPortsChange(ports: PortInfo[], isFirst: boolean): Promise<void> {
 		console.log("[Controller] Handling serial port changes...", { isFirst, portCount: ports.length })
+
+		// 步驟 1: 無論如何，都先更新完整的可用串口列表狀態
 		this.cacheService.setGlobalState("amebaSerialPorts", ports)
-		const amebaSelectedSerialPort = this.cacheService.getGlobalStateKey("amebaSelectedSerialPort")
-		if (isFirst && ports.length > 0) {
-			console.log(`[Controller] First scan, selecting port: ${ports[0].path}`)
-			await this.setSelectedAmebaSerialPort(ports[0].path)
-			return
+
+		const currentSelection = this.cacheService.getGlobalStateKey("amebaSelectedSerialPort")
+
+		// 步驟 2: 檢查當前選中的串口是否仍然有效
+		const isCurrentSelectionValid = currentSelection ? ports.some((p) => p.path === currentSelection) : false
+
+		// 步驟 3: 如果當前選項無效，則決定一個新的選項
+		if (!isCurrentSelectionValid) {
+			// 如果列表不為空，自動選擇第一個；否則設為 undefined
+			const newSelection = ports.length > 0 ? ports[0].path : undefined
+
+			// 使用我們現有的函式來更新選項，它會處理後續的狀態同步
+			// 只有當選項確實發生變化時才呼叫，避免不必要的更新
+			if (newSelection !== currentSelection) {
+				await this.setSelectedAmebaSerialPort(newSelection)
+			} else {
+				// 如果 newSelection 和 currentSelection 相同 (例如都是 undefined)
+				// 我們仍然需要確保 Webview 狀態被更新 (例如，在拔掉最後一個串口時)
+				await this.postStateToWebview()
+			}
+		} else {
+			// 步驟 4: 如果當前選項仍然有效，我們不需要改變選項
+			// 但列表本身可能已更新 (例如，插入了另一個非選中的串口)
+			// 所以我們仍然需要通知 Webview 刷新
+			await this.postStateToWebview()
 		}
-		if (amebaSelectedSerialPort && !ports.some((p) => p.path === amebaSelectedSerialPort)) {
-			console.log(`[Controller] Selected port ${amebaSelectedSerialPort} is gone. Clearing selection.`)
-			await this.setSelectedAmebaSerialPort(undefined)
-			return
-		}
-		await this.postStateToWebview()
 	}
 
 	public async setSelectedAmebaSerialPort(portPath: string | undefined): Promise<void> {

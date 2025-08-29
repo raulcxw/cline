@@ -4,11 +4,10 @@ import React from "react"
 import styled from "styled-components"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { AmebaServiceClient } from "@/services/grpc-client"
-import Tooltip from "../common/Tooltip" // Ensure the path is correct
+import Tooltip from "../common/Tooltip" // 請確保此路徑正確
 
-// --- (Styled Components - Unchanged) ---
+// --- Styled Components (此處的 CSS 分號必須保留) ---
 const StyledLinkDropdown = styled(VSCodeDropdown)`
-	min-width: 80px;
 	&::part(indicator) {
 		display: none;
 	}
@@ -42,6 +41,7 @@ const StyledOption = styled(VSCodeOption)`
 	&::part(content) {
 		background: transparent;
 		color: var(--vscode-foreground);
+		font-size: 12px;
 	}
 	&:hover::part(content) {
 		background: var(--vscode-list-hoverBackground);
@@ -60,26 +60,20 @@ const ControlsRow = styled.div`
 	font-size: 12px;
 	color: var(--vscode-descriptionForeground);
 `
-
-const SerialPortDropdown = styled(VSCodeDropdown)`
-	min-width: 60px;
-	max-width: 120px;
-	&::part(listbox) {
-		z-index: 9999;
-	}
-`
-// --- (Styled Components End) ---
-
-// Define a unique value for the "manual scan" option that won't conflict with real serial ports
-const MANUAL_SCAN_VALUE = "__MANUAL_SCAN__"
+// --- Styled Components End ---
 
 const AmebaServiceModal: React.FC = () => {
 	const { amebaSdkRoot, amebaToolChainEnv, amebaIcSelection, amebaIcVariants, amebaSerialPorts, amebaSelectedSerialPort } =
 		useExtensionState()
 
+	// 刪除這裡的日誌，或者您可以保留它們以供除錯
+	// console.log("[Frontend] React component rerendered.");
+	// console.log("[Frontend] Received from context: amebaSelectedSerialPort =", amebaSelectedSerialPort);
+	// console.log("[Frontend] Passing to Dropdown value prop:", amebaSelectedSerialPort || "");
+
 	const isAmebaSdkReady = !!(amebaSdkRoot && amebaToolChainEnv)
 
-	// --- Event Handlers (Unchanged) ---
+	// --- Event Handlers ---
 	const handleMenuConfigClick = async () => {
 		try {
 			await AmebaServiceClient.amebaMenuConfig(EmptyRequest.create())
@@ -118,22 +112,13 @@ const AmebaServiceModal: React.FC = () => {
 			try {
 				await AmebaServiceClient.amebaUpdateChipSelection(StringRequest.create({ value: newIc }))
 			} catch (error) {
-				console.error("Failed to update Ameba IC selection:", error)
+				console.error("Failed to update Ameba Chip selection:", error)
 			}
 		}
 	}
 
 	const handlePortSelectionChange = async (e: any) => {
 		const selectedValue = e.target.value
-		if (selectedValue === MANUAL_SCAN_VALUE) {
-			try {
-				await AmebaServiceClient.amebaRefreshSerialPorts(EmptyRequest.create())
-			} catch (error) {
-				console.error("Failed to refresh serial ports manually:", error)
-			}
-			return
-		}
-
 		if (selectedValue !== amebaSelectedSerialPort) {
 			try {
 				await AmebaServiceClient.amebaUpdateSerialPort(StringRequest.create({ value: selectedValue }))
@@ -143,6 +128,10 @@ const AmebaServiceModal: React.FC = () => {
 		}
 	}
 	// --- Event Handlers End ---
+
+	// --- [新增] 為串口下拉選單生成一個獨一無二的 key ---
+	// 當串口列表的內容發生任何變化時，這個 key 都會跟著改變。
+	const portDropdownKey = amebaSerialPorts.map((p) => p.path).join(",")
 
 	const getDisabledTooltipText = (): string => {
 		const sdkError = "Ameba SDK not found. Please open an SDK project folder or set the path manually."
@@ -175,16 +164,14 @@ const AmebaServiceModal: React.FC = () => {
 
 	const chipTooltipText = getChipTooltipText()
 
-	// 为不同元素定义不同的Tooltip样式
 	const chipTooltipStyle: React.CSSProperties = {
-		left: "0px", // 仅芯片图标需要这个样式
+		left: "0px",
 		zIndex: 1001,
 	}
 
-	// 下拉框的Tooltip样式 - 居中显示
 	const dropdownTooltipStyle: React.CSSProperties = {
-		left: "50%", // 水平居中
-		transform: "translateX(-50%)", // 水平居中
+		left: "50%",
+		transform: "translateX(-50%)",
 		zIndex: 1001,
 		whiteSpace: "nowrap",
 	}
@@ -202,9 +189,12 @@ const AmebaServiceModal: React.FC = () => {
 					}}></span>
 			</Tooltip>
 
-			{/* 为IC选择下拉框添加居中样式 */}
-			<Tooltip style={dropdownTooltipStyle} tipText={isAmebaSdkReady ? "Select IC" : disabledTooltipText}>
-				<StyledLinkDropdown disabled={!isAmebaSdkReady} onChange={handleIcSelectionChange} value={amebaIcSelection}>
+			<Tooltip style={dropdownTooltipStyle} tipText={isAmebaSdkReady ? "Select Chip" : disabledTooltipText}>
+				<StyledLinkDropdown
+					disabled={!isAmebaSdkReady}
+					onChange={handleIcSelectionChange}
+					style={{ minWidth: "75px" }}
+					value={amebaIcSelection}>
 					{(amebaIcVariants || []).map((variant) => (
 						<StyledOption key={variant} value={variant}>
 							{variant}
@@ -213,24 +203,30 @@ const AmebaServiceModal: React.FC = () => {
 				</StyledLinkDropdown>
 			</Tooltip>
 
-			{/* 为串口选择下拉框添加居中样式 */}
 			<Tooltip style={dropdownTooltipStyle} tipText={isAmebaSdkReady ? "Select Serial Port" : disabledTooltipText}>
-				<SerialPortDropdown
+				<StyledLinkDropdown
+					// --- [修改] 在此處添加 key 屬性 ---
+					// 這會強制 React 在串口列表變化時重新創建一個全新的 Dropdown 元件
+					// 從而解決元件內部狀態導致的顯示不一致問題。
 					disabled={!isAmebaSdkReady}
+					key={portDropdownKey}
 					onChange={handlePortSelectionChange}
+					style={{ minWidth: "45px" }}
 					value={amebaSelectedSerialPort || ""}>
-					<StyledOption value={MANUAL_SCAN_VALUE}>Scan Manually</StyledOption>
-					<StyledOption disabled>──────────</StyledOption>
-					<StyledOption value="">{amebaSerialPorts.length > 0 ? "" : "No port found"}</StyledOption>
-					{amebaSerialPorts.map((port) => (
-						<StyledOption key={port.path} value={port.path}>
-							{port.path}
+					{amebaSerialPorts.length === 0 ? (
+						<StyledOption disabled value="">
+							No port found
 						</StyledOption>
-					))}
-				</SerialPortDropdown>
+					) : (
+						amebaSerialPorts.map((port) => (
+							<StyledOption key={port.path} value={port.path}>
+								{port.path}
+							</StyledOption>
+						))
+					)}
+				</StyledLinkDropdown>
 			</Tooltip>
 
-			{/* 其他控制按钮保持不变 */}
 			<Tooltip tipText={isAmebaSdkReady ? "Ameba Menuconfig" : disabledTooltipText}>
 				<VSCodeButton
 					appearance="icon"
