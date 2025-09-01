@@ -20,7 +20,7 @@ const EXTENSION_DIR = path.join(INSTALL_DIR, "extension")
 const EXTENSION_MODE = process.env.IS_DEV === "true" ? ExtensionMode.Development : ExtensionMode.Production
 
 const extension: Extension<void> = {
-	id: "saoudrizwan.claude-dev",
+	id: "Realtek.cline-ameba",
 	isActive: true,
 	extensionPath: EXTENSION_DIR,
 	extensionUri: URI.file(EXTENSION_DIR),

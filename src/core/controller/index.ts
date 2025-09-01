@@ -20,6 +20,7 @@ import extract from "extract-zip"
 /* realtek ameba add start*/
 import { createWriteStream } from "fs"
 import fs from "fs/promises"
+import * as os from "os"
 import pWaitFor from "p-wait-for"
 import * as path from "path"
 import * as tar from "tar" // [新增] 用於解壓 .tar.gz
@@ -63,7 +64,7 @@ export class Controller {
 
 	/* realtek ameba add start*/
 	public readonly amebaTerminalManager: TerminalManager
-	private serialPortManager: SerialPortManager
+	private serialPortManager: SerialPortManager | undefined
 	private prebuiltsReminderTimer: NodeJS.Timeout | undefined
 	private isPrebuiltsReminderActive: boolean = false
 	private venvReminderTimer: NodeJS.Timeout | undefined
@@ -83,7 +84,6 @@ export class Controller {
 
 		/* realtek ameba add start*/
 		this.amebaTerminalManager = new TerminalManager()
-		this.serialPortManager = new SerialPortManager(this.handleSerialPortsChange.bind(this))
 		/* realtek ameba add end*/
 
 		// Initialize cache service asynchronously - critical for extension functionality
@@ -95,6 +95,8 @@ export class Controller {
 				/* realtek ameba add start*/
 				// [修正] 將自動檢測邏輯移動到此處，確保 CacheService 已初始化
 				console.log("[Controller] CacheService initialized. Starting Ameba SDK auto-detection.")
+
+				this.serialPortManager = new SerialPortManager(this.handleSerialPortsChange.bind(this))
 
 				// 1. 插件启动时，立即执行一次检测
 				this.autoDetectAndSetAmebaSdkRoot()
@@ -160,7 +162,7 @@ export class Controller {
 
 		/* realtek ameba add start*/
 		this.amebaTerminalManager.disposeAll && this.amebaTerminalManager.disposeAll()
-		this.serialPortManager.dispose()
+		this.serialPortManager?.dispose()
 		this.stopPrebuiltsReminder()
 		this.stopVenvReminder()
 		/* realtek ameba add end*/
@@ -970,7 +972,13 @@ export class Controller {
 			const scriptDefaultDir = parseVar("RTK_TOOLCHAIN_DIR")
 			const baseToolchainDir = envVarPath || scriptDefaultDir || defaultToolchainDir
 
-			const prebuiltsDir = path.join(baseToolchainDir, `${prebuiltDirPrefix}-${prebuiltsVersion}`)
+			let expandedBaseToolchainDir = baseToolchainDir
+			if (platform !== "win32" && baseToolchainDir.startsWith("~")) {
+				expandedBaseToolchainDir = path.join(os.homedir(), baseToolchainDir.substring(1))
+				console.log(`[Ameba Env] Expanded toolchain path from "${baseToolchainDir}" to "${expandedBaseToolchainDir}"`)
+			}
+
+			const prebuiltsDir = path.join(expandedBaseToolchainDir, `${prebuiltDirPrefix}-${prebuiltsVersion}`)
 
 			if (await fileExistsAtPath(prebuiltsDir)) {
 				console.log(`[Ameba Env] Toolchain Dir found at: ${prebuiltsDir}`)
@@ -1006,7 +1014,14 @@ export class Controller {
 				if (prebuiltsUrlAliyun) {
 					urls.push(prebuiltsUrlAliyun)
 				}
-				this.promptAndRemindToInstallPrebuilts(prebuiltsVersion, baseToolchainDir, urls, prebuiltsDir, sdkRoot, platform)
+				this.promptAndRemindToInstallPrebuilts(
+					prebuiltsVersion,
+					expandedBaseToolchainDir,
+					urls,
+					prebuiltsDir,
+					sdkRoot,
+					platform,
+				)
 			}
 		} catch (error) {
 			console.error(`Error checking Ameba SDK toolchain for ${platform}:`, error)
@@ -1188,44 +1203,78 @@ export class Controller {
 	): Promise<void> {
 		const channel = vscode.window.createOutputChannel("Ameba Environment Setup")
 		channel.show(true)
+
 		const isWindows = platform === "win32"
-		const pythonFolderName = "python3"
-		const pythonExeName = isWindows ? "python.exe" : "python"
-		const portablePythonPath = path.join(toolchainDir, pythonFolderName, pythonExeName)
 		const venvPath = path.join(sdkRoot, ".venv")
 		const requirementsPath = path.join(sdkRoot, "tools", "requirements.txt")
-		if (!(await fileExistsAtPath(portablePythonPath))) {
-			throw new Error(`Portable Python not found at: ${portablePythonPath}`)
+
+		let pythonExecutablePath: string
+
+		// --- [核心修改] 根據作業系統決定 Python 執行檔路徑 ---
+		if (isWindows) {
+			// Windows 邏輯：使用工具鏈中提供的可攜式 Python
+			const pythonFolderName = "python3"
+			const pythonExeName = "python.exe"
+			pythonExecutablePath = path.join(toolchainDir, pythonFolderName, pythonExeName)
+
+			channel.appendLine(`[Info] Platform is Windows. Verifying portable Python at: ${pythonExecutablePath}`)
+			if (!(await fileExistsAtPath(pythonExecutablePath))) {
+				throw new Error(
+					`Portable Python not found at: ${pythonExecutablePath}. Please ensure the toolchain is installed correctly.`,
+				)
+			}
+			channel.appendLine(`[Info] Portable Python found.`)
+		} else {
+			// Linux/macOS 邏輯：使用系統的 python3
+			pythonExecutablePath = "python3"
+			channel.appendLine(`[Info] Platform is ${platform}. Attempting to use system command: '${pythonExecutablePath}'`)
+
+			// 驗證系統中是否存在 python3 命令
+			try {
+				await this.executeCommandInOutputChannel(`${pythonExecutablePath} --version`, channel)
+				channel.appendLine(`[Info] System command '${pythonExecutablePath}' is available.`)
+			} catch (error) {
+				channel.appendLine(`[Error] System command '${pythonExecutablePath}' not found or failed to execute.`)
+				channel.appendLine(
+					`[Info] Please make sure Python 3 is installed and '${pythonExecutablePath}' is in your system's PATH.`,
+				)
+				throw new Error(`System command '${pythonExecutablePath}' is not available. Please install Python 3.`)
+			}
 		}
+
 		if (!(await fileExistsAtPath(requirementsPath))) {
 			channel.appendLine(`[Warning] requirements.txt not found at: ${requirementsPath}. Skipping dependency installation.`)
 			return
 		}
-		if (token.isCancellationRequested) {
-			return
-		}
+
+		if (token.isCancellationRequested) return
+
+		// --- 後續步驟不變，只是使用新的 pythonExecutablePath 變數 ---
+
 		progress.report({ increment: 15, message: "Cleaning up old environment..." })
-		channel.appendLine(`[Step 1/3] Removing existing .venv directory at ${venvPath}`)
+		channel.appendLine(`\n[Step 1/3] Removing existing .venv directory at ${venvPath}...`)
 		if (await fileExistsAtPath(venvPath)) {
 			await fs.rm(venvPath, { recursive: true, force: true })
 		}
 		channel.appendLine("Cleanup complete.")
-		if (token.isCancellationRequested) {
-			return
-		}
+
+		if (token.isCancellationRequested) return
+
 		progress.report({ increment: 25, message: "Creating Python virtual environment..." })
-		channel.appendLine("[Step 2/3] Creating new Python virtual environment...")
+		channel.appendLine("\n[Step 2/3] Creating new Python virtual environment...")
+		// 在 Windows 上，有些可攜式 Python 可能需要 virtualenv 模組，而 Linux 的 python3 通常內建 venv
 		const venvModuleName = isWindows ? "virtualenv" : "venv"
-		const createVenvCommand = `"${portablePythonPath}" -m ${venvModuleName} "${venvPath}"`
+		const createVenvCommand = `"${pythonExecutablePath}" -m ${venvModuleName} "${venvPath}"`
 		await this.executeCommandInOutputChannel(createVenvCommand, channel)
-		if (token.isCancellationRequested) {
-			return
-		}
-		progress.report({ increment: 20, message: "Installing dependencies from requirements.txt..." })
-		channel.appendLine("[Step 3/3] Installing dependencies...")
+
+		if (token.isCancellationRequested) return
+
+		progress.report({ increment: 20, message: "Installing dependencies..." })
+		channel.appendLine("\n[Step 3/3] Installing dependencies from requirements.txt...")
 		const venvPythonPath = path.join(venvPath, isWindows ? "Scripts" : "bin", "python")
 		const installDepsCommand = `"${venvPythonPath}" -m pip install -r "${requirementsPath}"`
 		await this.executeCommandInOutputChannel(installDepsCommand, channel)
+
 		channel.appendLine("\nPython virtual environment setup complete!")
 		progress.report({ increment: 5, message: "Setup complete!" })
 	}

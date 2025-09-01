@@ -444,7 +444,7 @@ export async function activate(context: vscode.ExtensionContext) {
 					activeWebview = tabInstances[tabInstances.length - 1]
 				} else {
 					// Try to focus sidebar
-					await vscode.commands.executeCommand("claude-dev.SidebarProvider.focus")
+					await vscode.commands.executeCommand("cline-ameba.SidebarProvider.focus")
 
 					// Small delay for focus to complete
 					await new Promise((resolve) => setTimeout(resolve, 200))
@@ -475,7 +475,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	// Register the openWalkthrough command handler
 	context.subscriptions.push(
 		vscode.commands.registerCommand("cline.openWalkthrough", async () => {
-			await vscode.commands.executeCommand("workbench.action.openWalkthrough", "saoudrizwan.claude-dev#ClineWalkthrough")
+			await vscode.commands.executeCommand("workbench.action.openWalkthrough", "Realtek.cline-ameba#ClineWalkthrough")
 			telemetryService.captureButtonClick("command_openWalkthrough")
 		}),
 	)
@@ -521,7 +521,7 @@ function setupHostProvider(context: ExtensionContext) {
 	const outputChannel = vscode.window.createOutputChannel("Cline")
 	context.subscriptions.push(outputChannel)
 
-	const getCallbackUri = async () => `${vscode.env.uriScheme || "vscode"}://saoudrizwan.claude-dev`
+	const getCallbackUri = async () => `${vscode.env.uriScheme || "vscode"}://Realtek.cline-ameba`
 	HostProvider.initialize(createWebview, createDiffView, vscodeHostBridgeClient, outputChannel.appendLine, getCallbackUri)
 }
 
