@@ -1,12 +1,12 @@
 import { EmptyRequest, StringRequest } from "@shared/proto/cline/common"
 import { VSCodeButton, VSCodeDropdown, VSCodeOption } from "@vscode/webview-ui-toolkit/react"
-import React, { useEffect, useRef, useState } from "react"
+import React from "react"
 import styled from "styled-components"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { AmebaServiceClient } from "@/services/grpc-client"
 import Tooltip from "../common/Tooltip"
 
-// --- Styled Components ---
+// --- Styled Components (保持不變) ---
 const StyledLinkDropdown = styled(VSCodeDropdown)`
 	&::part(indicator) {
 		display: none;
@@ -66,29 +66,7 @@ const AmebaServiceModal: React.FC = () => {
 	const { amebaSdkRoot, amebaToolChainEnv, amebaIcSelection, amebaIcVariants, amebaSerialPorts, amebaSelectedSerialPort } =
 		useExtensionState()
 
-	// 新增：状态更新锁，防止并发调用
-	const [isUpdating, setIsUpdating] = useState(false)
-	// 新增：下拉框DOM引用
-	const icDropdownRef = useRef<HTMLSelectElement>(null)
-	const portDropdownRef = useRef<HTMLSelectElement>(null)
-
 	const isAmebaSdkReady = !!(amebaSdkRoot && amebaToolChainEnv)
-
-	// --- 新增：强制同步下拉框状态 ---
-	useEffect(() => {
-		if (icDropdownRef.current && icDropdownRef.current.value !== amebaIcSelection) {
-			icDropdownRef.current.value = amebaIcSelection || ""
-		}
-	}, [amebaIcSelection])
-
-	useEffect(() => {
-		if (portDropdownRef.current && portDropdownRef.current.value !== amebaSelectedSerialPort) {
-			portDropdownRef.current.value = amebaSelectedSerialPort || ""
-		}
-	}, [amebaSelectedSerialPort])
-
-	// 优化：仅在串口数量变化时重建组件
-	const portDropdownKey = amebaSerialPorts.length
 
 	// --- Event Handlers ---
 	const handleMenuConfigClick = async () => {
@@ -123,37 +101,33 @@ const AmebaServiceModal: React.FC = () => {
 		}
 	}
 
-	// 修复：添加状态锁防止循环调用
 	const handleIcSelectionChange = async (e: any) => {
 		const newIc = e.target.value
-		if (newIc && newIc !== amebaIcSelection && !isUpdating) {
-			setIsUpdating(true)
+		if (newIc && newIc !== amebaIcSelection) {
 			try {
 				await AmebaServiceClient.amebaUpdateChipSelection(StringRequest.create({ value: newIc }))
 			} catch (error) {
 				console.error("Failed to update Ameba Chip selection:", error)
-			} finally {
-				setIsUpdating(false)
 			}
 		}
 	}
 
-	// 修复：添加状态锁防止循环调用
 	const handlePortSelectionChange = async (e: any) => {
 		const selectedValue = e.target.value
-		if (selectedValue !== amebaSelectedSerialPort && !isUpdating) {
-			setIsUpdating(true)
+		if (selectedValue !== amebaSelectedSerialPort) {
 			try {
 				await AmebaServiceClient.amebaUpdateSerialPort(StringRequest.create({ value: selectedValue }))
 			} catch (error) {
+				// [語法修正] 補上遺漏的大括號
 				console.error("Failed to update Ameba Serial Port:", error)
-			} finally {
-				setIsUpdating(false)
 			}
 		}
 	}
 	// --- Event Handlers End ---
 
+	const portDropdownKey = amebaSerialPorts.length
+
+	// --- 工具函数（保持不变）---
 	const getDisabledTooltipText = (): string => {
 		const sdkError = "Ameba SDK not found. Please open an SDK project folder or set the path manually."
 		const toolchainError = "Ameba Toolchain directory and Prebuilts check failed. Please verify the installation."
@@ -197,6 +171,7 @@ const AmebaServiceModal: React.FC = () => {
 		whiteSpace: "nowrap",
 	}
 
+	// --- 渲染部分 ---
 	return (
 		<ControlsRow>
 			<Tooltip style={chipTooltipStyle} tipText={chipTooltipText}>
@@ -212,9 +187,8 @@ const AmebaServiceModal: React.FC = () => {
 
 			<Tooltip style={dropdownTooltipStyle} tipText={isAmebaSdkReady ? "Select Chip" : disabledTooltipText}>
 				<StyledLinkDropdown
-					disabled={!isAmebaSdkReady} // 绑定ref
+					disabled={!isAmebaSdkReady}
 					onChange={handleIcSelectionChange}
-					ref={icDropdownRef}
 					style={{ minWidth: "75px" }}
 					value={amebaIcSelection}>
 					{(amebaIcVariants || []).map((variant) => (
@@ -227,10 +201,9 @@ const AmebaServiceModal: React.FC = () => {
 
 			<Tooltip style={dropdownTooltipStyle} tipText={isAmebaSdkReady ? "Select Serial Port" : disabledTooltipText}>
 				<StyledLinkDropdown
-					disabled={!isAmebaSdkReady} // 绑定ref
+					disabled={!isAmebaSdkReady}
 					key={portDropdownKey}
-					onChange={handlePortSelectionChange}
-					ref={portDropdownRef}
+					onChange={amebaSerialPorts.length > 0 ? handlePortSelectionChange : undefined}
 					style={{ minWidth: "45px" }}
 					value={amebaSelectedSerialPort || ""}>
 					{amebaSerialPorts.length === 0 ? (
