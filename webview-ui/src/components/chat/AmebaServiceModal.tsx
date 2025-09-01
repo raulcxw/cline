@@ -207,7 +207,7 @@ const AmebaServiceModal: React.FC = () => {
 					style={{ minWidth: "45px" }}
 					value={amebaSelectedSerialPort || ""}>
 					{amebaSerialPorts.length === 0 ? (
-						<StyledOption disabled value="">
+						<StyledOption disabled value="no-port-placeholder">
 							No port found
 						</StyledOption>
 					) : (
