@@ -181,6 +181,7 @@ export type GlobalStateKey =
 	| "amebaSdkRoot"
 	| "amebaToolChainEnv"
 	| "amebaIcSelection"
+	| "amebaIcVariants"
 	| "amebaSerialPorts"
 	| "amebaSelectedSerialPort"
 /* realtek ameba add end*/
@@ -318,6 +319,7 @@ export interface GlobalState {
 	amebaSdkRoot: string | undefined
 	amebaToolChainEnv: string | undefined
 	amebaIcSelection: string | undefined
+	amebaIcVariants: string[] | undefined
 	amebaSerialPorts: SimplePortInfo[] | undefined
 	amebaSelectedSerialPort: string | undefined
 	/* realtek ameba add end*/

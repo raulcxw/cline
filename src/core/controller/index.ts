@@ -23,8 +23,8 @@ import fs from "fs/promises"
 import * as os from "os"
 import pWaitFor from "p-wait-for"
 import * as path from "path"
-import * as tar from "tar" // [新增] 用於解壓 .tar.gz
-import { promisify } from "util" // [新增] 用於 Promisify exec
+import * as tar from "tar"
+import { promisify } from "util"
 import * as vscode from "vscode"
 import { clineEnvConfig } from "@/config"
 import { HostProvider } from "@/hosts/host-provider"
@@ -41,7 +41,8 @@ import { type PortInfo, SerialPortManager } from "./ameba/amebaSerialPortManager
 import { sendMcpMarketplaceCatalogEvent } from "./mcp/subscribeToMcpMarketplaceCatalog"
 import { sendStateUpdate } from "./state/subscribeToState"
 
-const AMEBA_IC_VARIANTS = ["amebadplus", "amebalite", "amebasmart"]
+// [修改] 移除硬編碼的 IC 列表
+// const AMEBA_IC_VARIANTS = ["amebadplus", "amebalite", "amebasmart"]
 const AMEBA_SDK_MARKERS = ["Realtek_Disclaimer-2019.pdf", "ameba.bat", "ameba.sh"]
 const IGNORED_DIRS = new Set([".git", ".venv", "build"])
 /* realtek ameba add end*/
@@ -678,6 +679,8 @@ export class Controller {
 		const amebaSerialPorts = this.cacheService.getGlobalStateKey("amebaSerialPorts")
 		const amebaSelectedSerialPort = this.cacheService.getGlobalStateKey("amebaSelectedSerialPort")
 		const amebaToolChainEnv = this.cacheService.getGlobalStateKey("amebaToolChainEnv")
+		// [修改] 從快取讀取 IC 列表
+		const amebaIcVariants = this.cacheService.getGlobalStateKey("amebaIcVariants")
 		/* realtek ameba add end*/
 
 		const currentTaskItem = this.task?.taskId ? (taskHistory || []).find((item) => item.id === this.task?.taskId) : undefined
@@ -739,8 +742,9 @@ export class Controller {
 			customPrompt,
 			/* realtek ameba add start*/
 			amebaSdkRoot: amebaSdkRoot as string | undefined,
-			amebaIcSelection: (amebaIcSelection as string | undefined) || AMEBA_IC_VARIANTS[0], // 提供一个默认值
-			amebaIcVariants: AMEBA_IC_VARIANTS,
+			amebaIcSelection: amebaIcSelection as string | undefined, // [修改] 移除預設值，讓選擇邏輯更健壯
+			// [修改] 使用從快取讀取的動態列表
+			amebaIcVariants: (amebaIcVariants as string[] | undefined) || [],
 			amebaSerialPorts: (amebaSerialPorts as PortInfo[] | undefined) || [],
 			amebaSelectedSerialPort: amebaSelectedSerialPort as string | undefined,
 			amebaToolChainEnv: amebaToolChainEnv as string | undefined,
@@ -790,9 +794,9 @@ export class Controller {
 		return this.cacheService.getGlobalStateKey("amebaSdkRoot")
 	}
 
-	public async getAmebaIcSelection(): Promise<string> {
-		const selection = this.cacheService.getGlobalStateKey("amebaIcSelection")
-		return selection || AMEBA_IC_VARIANTS[0] // 确保总有一个默认值返回
+	public async getAmebaIcSelection(): Promise<string | undefined> {
+		// [修改] 直接返回快取中的值，可能是 undefined
+		return this.cacheService.getGlobalStateKey("amebaIcSelection")
 	}
 
 	public async getSelectedAmebaSerialPort(): Promise<string | undefined> {
@@ -824,10 +828,29 @@ export class Controller {
 		}
 	}
 
-	public async setAmebaIcSelection(icSelection: string): Promise<void> {
+	public async setAmebaIcSelection(icSelection: string | undefined): Promise<void> {
 		this.cacheService.setGlobalState("amebaIcSelection", icSelection)
 		console.log(`[Controller] Ameba IC selection updated to: ${icSelection}`)
 		await this.postStateToWebview()
+	}
+
+	// [新增] 儲存 IC 變體列表並更新當前選擇
+	private async setAmebaIcVariants(variants: string[]): Promise<void> {
+		this.cacheService.setGlobalState("amebaIcVariants", variants)
+		console.log(`[Controller] Ameba IC variants updated to: [${variants.join(", ")}]`)
+
+		// 檢查當前選擇的 IC 是否仍然有效
+		const currentSelection = await this.getAmebaIcSelection()
+		const isSelectionValid = currentSelection ? variants.includes(currentSelection) : false
+
+		// 如果當前選擇無效，或者從未選擇過，則設定一個新的預設值
+		if (!isSelectionValid) {
+			const newSelection = variants.length > 0 ? variants[0] : undefined
+			// 只有當新舊選擇不同時才更新，避免不必要的重複設定
+			if (newSelection !== currentSelection) {
+				await this.setAmebaIcSelection(newSelection)
+			}
+		}
 	}
 
 	private async isValidAmebaSdkDir(dirPath: string): Promise<boolean> {
@@ -837,6 +860,23 @@ export class Controller {
 			return results.every(Boolean)
 		} catch (error) {
 			return false
+		}
+	}
+
+	// [新增] 從 SDK 路徑動態獲取 IC 列表的函式
+	private async getAmebaIcVariantsFromSdk(sdkRoot: string): Promise<string[]> {
+		try {
+			const entries = await fs.readdir(sdkRoot, { withFileTypes: true })
+			const variants = entries
+				.filter((entry) => entry.isDirectory() && entry.name.endsWith("_gcc_project"))
+				.map((entry) => entry.name.replace("_gcc_project", ""))
+				.sort() // 排序以保證順序一致性
+
+			console.log(`[Ameba SDK] Found IC variants: [${variants.join(", ")}]`)
+			return variants
+		} catch (error) {
+			console.error(`[Ameba SDK] Failed to read IC variants from ${sdkRoot}:`, error)
+			return [] // 發生錯誤時返回空陣列
 		}
 	}
 
@@ -874,7 +914,6 @@ export class Controller {
 	}
 
 	private async autoDetectAndSetAmebaSdkRoot(): Promise<void> {
-		// [修改] 停止所有提醒循環
 		this.stopPrebuiltsReminder()
 		this.stopVenvReminder()
 
@@ -884,6 +923,8 @@ export class Controller {
 			console.log("[Ameba SDK] No workspace folder open. Skipping auto-detection.")
 			await this.setAmebaSdkRoot(undefined)
 			await this.setAmebaToolChainEnv(undefined)
+			// [修改] 當沒有工作區時，清空 IC 列表
+			await this.setAmebaIcVariants([])
 			return
 		}
 
@@ -892,10 +933,15 @@ export class Controller {
 
 		if (foundSdkPath) {
 			await this.setAmebaSdkRoot(foundSdkPath)
+			// [修改] 找到 SDK 後，動態生成並設定 IC 列表
+			const variants = await this.getAmebaIcVariantsFromSdk(foundSdkPath)
+			await this.setAmebaIcVariants(variants)
 			await this.checkAndSetupAmebaToolChainEnv(foundSdkPath)
 		} else {
 			await this.setAmebaSdkRoot(undefined)
 			await this.setAmebaToolChainEnv(undefined)
+			// [修改] 未找到 SDK 時，清空 IC 列表
+			await this.setAmebaIcVariants([])
 			HostProvider.window.showMessage({
 				type: ShowMessageType.WARNING,
 				message: "Ameba SDK not found in the workspace. Please open an Ameba SDK project or set the path manually.",
@@ -909,7 +955,6 @@ export class Controller {
 			this.cacheService.setGlobalState("amebaToolChainEnv", envPath)
 			console.log(`[Controller] Ameba Toolchain Env Path updated to: ${envPath}`)
 			if (envPath) {
-				// 只要工具鏈設定成功，就停止所有提醒
 				this.stopPrebuiltsReminder()
 				this.stopVenvReminder()
 			}
@@ -969,9 +1014,9 @@ export class Controller {
 			}
 
 			const envVarPath = process.env.RTK_TOOLCHAIN_DIR
-			const scriptDefaultDir = parseVar("RTK_TOOLCHAIN_DIR")
-			const baseToolchainDir = envVarPath || scriptDefaultDir || defaultToolchainDir
+			const baseToolchainDir = envVarPath || defaultToolchainDir
 
+			console.log(`[Ameba Env] envVarPath: "${envVarPath}" "${defaultToolchainDir}"`)
 			let expandedBaseToolchainDir = baseToolchainDir
 			if (platform !== "win32" && baseToolchainDir.startsWith("~")) {
 				expandedBaseToolchainDir = path.join(os.homedir(), baseToolchainDir.substring(1))
@@ -1041,7 +1086,6 @@ export class Controller {
 		}
 	}
 
-	// [新增] 停止 Venv 設定提醒的循環
 	private stopVenvReminder(): void {
 		if (this.venvReminderTimer) {
 			clearTimeout(this.venvReminderTimer)
@@ -1096,7 +1140,6 @@ export class Controller {
 		}
 	}
 
-	// [修改] 重構為具備提醒功能的函式
 	private async promptAndRemindToSetupVenv(
 		sdkRoot: string,
 		baseToolchainDir: string,
@@ -1147,7 +1190,6 @@ export class Controller {
 					type: ShowMessageType.ERROR,
 					message: `Failed to create Ameba Python virtual environment: ${errorMessage}`,
 				})
-				// [新增] 如果安裝失敗，重新啟動提醒循環
 				if (!this.isVenvReminderActive) {
 					this.isVenvReminderActive = true
 					this.promptAndRemindToSetupVenv(sdkRoot, baseToolchainDir, finalPrebuiltsPath, platform)
@@ -1210,9 +1252,7 @@ export class Controller {
 
 		let pythonExecutablePath: string
 
-		// --- [核心修改] 根據作業系統決定 Python 執行檔路徑 ---
 		if (isWindows) {
-			// Windows 邏輯：使用工具鏈中提供的可攜式 Python
 			const pythonFolderName = "python3"
 			const pythonExeName = "python.exe"
 			pythonExecutablePath = path.join(toolchainDir, pythonFolderName, pythonExeName)
@@ -1225,11 +1265,9 @@ export class Controller {
 			}
 			channel.appendLine(`[Info] Portable Python found.`)
 		} else {
-			// Linux/macOS 邏輯：使用系統的 python3
 			pythonExecutablePath = "python3"
 			channel.appendLine(`[Info] Platform is ${platform}. Attempting to use system command: '${pythonExecutablePath}'`)
 
-			// 驗證系統中是否存在 python3 命令
 			try {
 				await this.executeCommandInOutputChannel(`${pythonExecutablePath} --version`, channel)
 				channel.appendLine(`[Info] System command '${pythonExecutablePath}' is available.`)
@@ -1249,8 +1287,6 @@ export class Controller {
 
 		if (token.isCancellationRequested) return
 
-		// --- 後續步驟不變，只是使用新的 pythonExecutablePath 變數 ---
-
 		progress.report({ increment: 15, message: "Cleaning up old environment..." })
 		channel.appendLine(`\n[Step 1/3] Removing existing .venv directory at ${venvPath}...`)
 		if (await fileExistsAtPath(venvPath)) {
@@ -1262,7 +1298,6 @@ export class Controller {
 
 		progress.report({ increment: 25, message: "Creating Python virtual environment..." })
 		channel.appendLine("\n[Step 2/3] Creating new Python virtual environment...")
-		// 在 Windows 上，有些可攜式 Python 可能需要 virtualenv 模組，而 Linux 的 python3 通常內建 venv
 		const venvModuleName = isWindows ? "virtualenv" : "venv"
 		const createVenvCommand = `"${pythonExecutablePath}" -m ${venvModuleName} "${venvPath}"`
 		await this.executeCommandInOutputChannel(createVenvCommand, channel)
@@ -1401,32 +1436,21 @@ export class Controller {
 	private async handleSerialPortsChange(ports: PortInfo[], isFirst: boolean): Promise<void> {
 		console.log("[Controller] Handling serial port changes...", { isFirst, portCount: ports.length })
 
-		// 步驟 1: 無論如何，都先更新完整的可用串口列表狀態
 		this.cacheService.setGlobalState("amebaSerialPorts", ports)
 
 		const currentSelection = this.cacheService.getGlobalStateKey("amebaSelectedSerialPort")
 
-		// 步驟 2: 檢查當前選中的串口是否仍然有效
 		const isCurrentSelectionValid = currentSelection ? ports.some((p) => p.path === currentSelection) : false
 
-		// 步驟 3: 如果當前選項無效，則決定一個新的選項
 		if (!isCurrentSelectionValid) {
-			// 如果列表不為空，自動選擇第一個；否則設為 undefined
 			const newSelection = ports.length > 0 ? ports[0].path : undefined
 
-			// 使用我們現有的函式來更新選項，它會處理後續的狀態同步
-			// 只有當選項確實發生變化時才呼叫，避免不必要的更新
 			if (newSelection !== currentSelection) {
 				await this.setSelectedAmebaSerialPort(newSelection)
 			} else {
-				// 如果 newSelection 和 currentSelection 相同 (例如都是 undefined)
-				// 我們仍然需要確保 Webview 狀態被更新 (例如，在拔掉最後一個串口時)
 				await this.postStateToWebview()
 			}
 		} else {
-			// 步驟 4: 如果當前選項仍然有效，我們不需要改變選項
-			// 但列表本身可能已更新 (例如，插入了另一個非選中的串口)
-			// 所以我們仍然需要通知 Webview 刷新
 			await this.postStateToWebview()
 		}
 	}

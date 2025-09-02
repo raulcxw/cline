@@ -44,7 +44,7 @@ export async function amebaMonitor(controller: Controller, _request: EmptyReques
 		const monitorDir = path.join(sdkRoot, monitorProjectDirName)
 
 		// 4. Define the build command.
-		const monitorScriptName = `python monitor.py ${serialPort} 1500000 -reset`
+		const monitorScriptName = `python monitor.py -p ${serialPort} -b 1500000 -reset`
 
 		// 5. Get a dedicated terminal for Ameba tasks.
 		// The terminal's initial CWD is set to the SDK root for consistency.
