@@ -59,7 +59,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	// Initialize test mode and add disposables to context
 	context.subscriptions.push(...testModeWatchers)
 
-	vscode.commands.executeCommand("setContext", "cline.isDevMode", IS_DEV && IS_DEV === "true")
+	vscode.commands.executeCommand("setContext", "cline-ameba.isDevMode", IS_DEV && IS_DEV === "true")
 
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(VscodeWebviewProvider.SIDEBAR_ID, sidebarWebview, {
@@ -68,7 +68,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	)
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand("cline.plusButtonClicked", async (webview: any) => {
+		vscode.commands.registerCommand("cline-ameba.plusButtonClicked", async (webview: any) => {
 			console.log("[DEBUG] plusButtonClicked", webview)
 			// Pass the webview type to the event sender
 			const isSidebar = !webview
@@ -95,7 +95,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	)
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand("cline.mcpButtonClicked", (webview: any) => {
+		vscode.commands.registerCommand("cline-ameba.mcpButtonClicked", (webview: any) => {
 			console.log("[DEBUG] mcpButtonClicked", webview)
 
 			const activeInstance = WebviewProvider.getActiveInstance()
@@ -153,11 +153,11 @@ export async function activate(context: vscode.ExtensionContext) {
 		return tabWebview
 	}
 
-	context.subscriptions.push(vscode.commands.registerCommand("cline.popoutButtonClicked", openClineInNewTab))
-	context.subscriptions.push(vscode.commands.registerCommand("cline.openInNewTab", openClineInNewTab))
+	context.subscriptions.push(vscode.commands.registerCommand("cline-ameba.popoutButtonClicked", openClineInNewTab))
+	context.subscriptions.push(vscode.commands.registerCommand("cline-ameba.openInNewTab", openClineInNewTab))
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand("cline.settingsButtonClicked", (webview: any) => {
+		vscode.commands.registerCommand("cline-ameba.settingsButtonClicked", (webview: any) => {
 			const isSidebar = !webview
 			const webviewType = isSidebar ? WebviewProviderTypeEnum.SIDEBAR : WebviewProviderTypeEnum.TAB
 
@@ -166,7 +166,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	)
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand("cline.historyButtonClicked", async (webview: any) => {
+		vscode.commands.registerCommand("cline-ameba.historyButtonClicked", async (webview: any) => {
 			console.log("[DEBUG] historyButtonClicked", webview)
 			// Pass the webview type to the event sender
 			const isSidebar = !webview
@@ -178,7 +178,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	)
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand("cline.accountButtonClicked", (webview: any) => {
+		vscode.commands.registerCommand("cline-ameba.accountButtonClicked", (webview: any) => {
 			console.log("[DEBUG] accountButtonClicked", webview)
 
 			const isSidebar = !webview
@@ -241,7 +241,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	}
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand("cline.addTerminalOutputToChat", async () => {
+		vscode.commands.registerCommand("cline-ameba.addTerminalOutputToChat", async () => {
 			const terminal = vscode.window.activeTerminal
 			if (!terminal) {
 				return
@@ -332,7 +332,7 @@ export async function activate(context: vscode.ExtensionContext) {
 					// Add to Cline (Always available)
 					const addAction = new vscode.CodeAction("Add to Cline", vscode.CodeActionKind.QuickFix)
 					addAction.command = {
-						command: "cline.addToChat",
+						command: "cline-ameba.addToChat",
 						title: "Add to Cline",
 						arguments: [expandedRange, context.diagnostics],
 					}
@@ -341,7 +341,7 @@ export async function activate(context: vscode.ExtensionContext) {
 					// Explain with Cline (Always available)
 					const explainAction = new vscode.CodeAction("Explain with Cline", vscode.CodeActionKind.RefactorExtract) // Using a refactor kind
 					explainAction.command = {
-						command: "cline.explainCode",
+						command: "cline-ameba.explainCode",
 						title: "Explain with Cline",
 						arguments: [expandedRange],
 					}
@@ -350,7 +350,7 @@ export async function activate(context: vscode.ExtensionContext) {
 					// Improve with Cline (Always available)
 					const improveAction = new vscode.CodeAction("Improve with Cline", vscode.CodeActionKind.RefactorRewrite) // Using a refactor kind
 					improveAction.command = {
-						command: "cline.improveCode",
+						command: "cline-ameba.improveCode",
 						title: "Improve with Cline",
 						arguments: [expandedRange],
 					}
@@ -361,7 +361,7 @@ export async function activate(context: vscode.ExtensionContext) {
 						const fixAction = new vscode.CodeAction("Fix with Cline", vscode.CodeActionKind.QuickFix)
 						fixAction.isPreferred = true
 						fixAction.command = {
-							command: "cline.fixWithCline",
+							command: "cline-ameba.fixWithCline",
 							title: "Fix with Cline",
 							arguments: [expandedRange, context.diagnostics],
 						}
@@ -382,25 +382,31 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// Register the command handlers
 	context.subscriptions.push(
-		vscode.commands.registerCommand("cline.addToChat", async (range?: vscode.Range, diagnostics?: vscode.Diagnostic[]) => {
-			const context = await getContextForCommand(range, diagnostics)
-			if (!context) {
-				return
-			}
-			await addToCline(context.controller, context.commandContext)
-		}),
+		vscode.commands.registerCommand(
+			"cline-ameba.addToChat",
+			async (range?: vscode.Range, diagnostics?: vscode.Diagnostic[]) => {
+				const context = await getContextForCommand(range, diagnostics)
+				if (!context) {
+					return
+				}
+				await addToCline(context.controller, context.commandContext)
+			},
+		),
 	)
 	context.subscriptions.push(
-		vscode.commands.registerCommand("cline.fixWithCline", async (range: vscode.Range, diagnostics: vscode.Diagnostic[]) => {
-			const context = await getContextForCommand(range, diagnostics)
-			if (!context) {
-				return
-			}
-			await fixWithCline(context.controller, context.commandContext)
-		}),
+		vscode.commands.registerCommand(
+			"cline-ameba.fixWithCline",
+			async (range: vscode.Range, diagnostics: vscode.Diagnostic[]) => {
+				const context = await getContextForCommand(range, diagnostics)
+				if (!context) {
+					return
+				}
+				await fixWithCline(context.controller, context.commandContext)
+			},
+		),
 	)
 	context.subscriptions.push(
-		vscode.commands.registerCommand("cline.explainCode", async (range: vscode.Range) => {
+		vscode.commands.registerCommand("cline-ameba.explainCode", async (range: vscode.Range) => {
 			const context = await getContextForCommand(range)
 			if (!context) {
 				return
@@ -409,7 +415,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		}),
 	)
 	context.subscriptions.push(
-		vscode.commands.registerCommand("cline.improveCode", async (range: vscode.Range) => {
+		vscode.commands.registerCommand("cline-ameba.improveCode", async (range: vscode.Range) => {
 			const context = await getContextForCommand(range)
 			if (!context) {
 				return
@@ -420,7 +426,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// Register the focusChatInput command handler
 	context.subscriptions.push(
-		vscode.commands.registerCommand("cline.focusChatInput", async () => {
+		vscode.commands.registerCommand("cline-ameba.focusChatInput", async () => {
 			// Fast path: check for existing active instance
 			let activeWebview = WebviewProvider.getLastActiveInstance() as VscodeWebviewProvider
 
@@ -474,7 +480,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// Register the openWalkthrough command handler
 	context.subscriptions.push(
-		vscode.commands.registerCommand("cline.openWalkthrough", async () => {
+		vscode.commands.registerCommand("cline-ameba.openWalkthrough", async () => {
 			await vscode.commands.executeCommand("workbench.action.openWalkthrough", "Realtek.cline-ameba#ClineWalkthrough")
 			telemetryService.captureButtonClick("command_openWalkthrough")
 		}),
@@ -482,10 +488,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// Register the generateGitCommitMessage command handler
 	context.subscriptions.push(
-		vscode.commands.registerCommand("cline.generateGitCommitMessage", async (scm) => {
+		vscode.commands.registerCommand("cline-ameba.generateGitCommitMessage", async (scm) => {
 			await GitCommitGenerator?.generate?.(context, scm)
 		}),
-		vscode.commands.registerCommand("cline.abortGitCommitMessage", () => {
+		vscode.commands.registerCommand("cline-ameba.abortGitCommitMessage", () => {
 			GitCommitGenerator?.abort?.()
 		}),
 	)

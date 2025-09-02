@@ -137,7 +137,7 @@ export class VscodeWebviewProvider extends WebviewProvider implements vscode.Web
 						await sendThemeEvent(JSON.stringify(theme))
 					}
 				}
-				if (e && e.affectsConfiguration("cline.mcpMarketplace.enabled")) {
+				if (e && e.affectsConfiguration("cline-ameba.mcpMarketplace.enabled")) {
 					// Update state when marketplace tab setting changes
 					await this.controller.postStateToWebview()
 				}

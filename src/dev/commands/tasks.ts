@@ -13,7 +13,7 @@ import { ShowMessageType } from "@/shared/proto/host/window"
  */
 export function registerTaskCommands(context: vscode.ExtensionContext, controller: Controller): vscode.Disposable[] {
 	return [
-		vscode.commands.registerCommand("cline.dev.createTestTasks", async () => {
+		vscode.commands.registerCommand("cline-ameba.dev.createTestTasks", async () => {
 			const count = (
 				await HostProvider.window.showInputBox({
 					title: "Test Tasks",

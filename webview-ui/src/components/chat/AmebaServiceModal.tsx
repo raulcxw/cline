@@ -1,13 +1,12 @@
 import { EmptyRequest, StringRequest } from "@shared/proto/cline/common"
 import { VSCodeButton, VSCodeDropdown, VSCodeOption } from "@vscode/webview-ui-toolkit/react"
-// [修改] 引入 useMemo
-import React, { useMemo } from "react"
+import React, { useMemo, useState } from "react"
 import styled from "styled-components"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { AmebaServiceClient } from "@/services/grpc-client"
 import Tooltip from "../common/Tooltip"
 
-// --- Styled Components (保持不變) ---
+// --- Styled Components ---
 const StyledLinkDropdown = styled(VSCodeDropdown)`
 	&::part(indicator) {
 		display: none;
@@ -62,46 +61,61 @@ const ControlsRow = styled.div`
 	color: var(--vscode-descriptionForeground);
 `
 // --- Styled Components End ---
+const calculateTextWidth = (text: string | null | undefined, font: string): string => {
+	const baseMinWidth = 45
+	const padding = 15
+
+	if (!text) {
+		return `${baseMinWidth}px`
+	}
+
+	try {
+		const canvas = document.createElement("canvas")
+		const context = canvas.getContext("2d")
+		if (context) {
+			context.font = font
+			const width = context.measureText(text).width
+			return `${Math.max(baseMinWidth, Math.ceil(width) + padding)}px`
+		}
+	} catch (e) {
+		console.error("Canvas context not available for width calculation.", e)
+	}
+
+	return `${Math.max(baseMinWidth, text.length * 8 + padding)}px`
+}
 
 const AmebaServiceModal: React.FC = () => {
 	const { amebaSdkRoot, amebaToolChainEnv, amebaIcSelection, amebaIcVariants, amebaSerialPorts, amebaSelectedSerialPort } =
 		useExtensionState()
 
+	const [isIcDropdownOpen, setIsIcDropdownOpen] = useState(false)
 	const isAmebaSdkReady = !!(amebaSdkRoot && amebaToolChainEnv)
 
-	// --- [新增] 使用 useMemo 計算下拉選單的動態寬度 ---
-	const icDropdownMinWidth = useMemo(() => {
-		const baseMinWidth = 75 // 設定一個基礎最小寬度
+	const FONT_STYLE = "12px var(--vscode-font-family, sans-serif)"
+
+	const longestIcWidth = useMemo(() => {
 		if (!amebaIcVariants || amebaIcVariants.length === 0) {
-			return `${baseMinWidth}px`
+			return "75px"
 		}
+		const longestVariant = amebaIcVariants.reduce((a, b) => (a.length > b.length ? a : b), "")
+		return calculateTextWidth(longestVariant, FONT_STYLE)
+	}, [amebaIcVariants])
 
-		// 使用 Canvas API 來精確測量文字寬度，這比單純計算字元數更準確
-		const canvas = document.createElement("canvas")
-		const context = canvas.getContext("2d")
+	const selectedIcWidth = useMemo(() => {
+		return calculateTextWidth(amebaIcSelection, FONT_STYLE)
+	}, [amebaIcSelection])
 
-		if (context) {
-			// 設定與 CSS 匹配的字體大小和樣式
-			context.font = "12px var(--vscode-font-family, sans-serif)"
+	const icDropdownWidth = isIcDropdownOpen ? longestIcWidth : selectedIcWidth
 
-			// 找出最長的 variant 渲染後所需的寬度
-			const maxWidth = amebaIcVariants.reduce((max, variant) => {
-				const width = context.measureText(variant).width
-				return Math.max(max, width)
-			}, 0)
+	// --- [修改] 事件處理函式名稱，使其更語意化 ---
+	const handleIcDropdownOpen = () => {
+		setIsIcDropdownOpen(true)
+	}
+	const handleIcDropdownClose = () => {
+		setIsIcDropdownOpen(false)
+	}
 
-			// 加上一些內邊距 (padding) 和緩衝空間
-			const totalWidth = Math.ceil(maxWidth) + 20 // 24px 作為左右邊距和緩衝
-
-			// 返回計算後的寬度，但不小於基礎寬度
-			return `${Math.max(baseMinWidth, totalWidth)}px`
-		}
-
-		// 如果 Canvas 無法使用，則退回基礎寬度
-		return `${baseMinWidth}px`
-	}, [amebaIcVariants]) // 僅在 amebaIcVariants 陣列變化時重新計算
-
-	// --- Event Handlers (保持不變) ---
+	// --- Event Handlers (部分修改) ---
 	const handleMenuConfigClick = async () => {
 		try {
 			await AmebaServiceClient.amebaMenuConfig(EmptyRequest.create())
@@ -135,6 +149,7 @@ const AmebaServiceModal: React.FC = () => {
 	}
 
 	const handleIcSelectionChange = async (e: any) => {
+		handleIcDropdownClose()
 		const newIc = e.target.value
 		if (newIc && newIc !== amebaIcSelection) {
 			try {
@@ -155,11 +170,9 @@ const AmebaServiceModal: React.FC = () => {
 			}
 		}
 	}
-	// --- Event Handlers End ---
 
 	const portDropdownKey = amebaSerialPorts.length
 
-	// --- 工具函数（保持不变）---
 	const getDisabledTooltipText = (): string => {
 		const sdkError = "Ameba SDK not found. Please open an SDK project folder or set the path manually."
 		const toolchainError = "Ameba Toolchain directory and Prebuilts check failed. Please verify the installation."
@@ -218,11 +231,13 @@ const AmebaServiceModal: React.FC = () => {
 			</Tooltip>
 
 			<Tooltip style={dropdownTooltipStyle} tipText={isAmebaSdkReady ? "Select Chip" : disabledTooltipText}>
-				{/* --- [修改] 將計算出的 minWidth 應用到 style --- */}
+				{/* --- [核心修改] 將 onFocus 改為 onMouseDown --- */}
 				<StyledLinkDropdown
 					disabled={!isAmebaSdkReady}
+					onBlur={handleIcDropdownClose}
 					onChange={handleIcSelectionChange}
-					style={{ minWidth: icDropdownMinWidth }}
+					onMouseDown={handleIcDropdownOpen}
+					style={{ minWidth: icDropdownWidth }}
 					value={amebaIcSelection || ""}>
 					{(amebaIcVariants || []).map((variant) => (
 						<StyledOption key={variant} value={variant}>
@@ -253,7 +268,6 @@ const AmebaServiceModal: React.FC = () => {
 				</StyledLinkDropdown>
 			</Tooltip>
 
-			{/* 其他按鈕保持不變 */}
 			<Tooltip tipText={isAmebaSdkReady ? "Ameba Menuconfig" : disabledTooltipText}>
 				<VSCodeButton
 					appearance="icon"
