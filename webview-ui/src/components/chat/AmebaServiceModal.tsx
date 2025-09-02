@@ -148,6 +148,15 @@ const AmebaServiceModal: React.FC = () => {
 		}
 	}
 
+	const handleOpenDocsClick = async () => {
+		try {
+			const docsUrl = "https://aiot.realmcu.com/"
+			await AmebaServiceClient.amebaOpenDocUrl(StringRequest.create({ value: docsUrl }))
+		} catch (error) {
+			console.error("Failed to open documentation link:", error)
+		}
+	}
+
 	const handleIcSelectionChange = async (e: any) => {
 		handleIcDropdownClose()
 		const newIc = e.target.value
@@ -297,6 +306,12 @@ const AmebaServiceModal: React.FC = () => {
 					disabled={!isAmebaSdkReady}
 					onClick={handleMonitorClick}>
 					<span className="codicon codicon-vm" />
+				</VSCodeButton>
+			</Tooltip>
+
+			<Tooltip tipText="Open Ameba Documentation">
+				<VSCodeButton appearance="icon" aria-label="Ameba Doc" onClick={handleOpenDocsClick}>
+					<span className="codicon codicon-book" />
 				</VSCodeButton>
 			</Tooltip>
 		</ControlsRow>

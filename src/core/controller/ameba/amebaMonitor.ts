@@ -56,7 +56,7 @@ export async function amebaMonitor(controller: Controller, _request: EmptyReques
 				type: ShowMessageType.ERROR,
 				message: "Failed to create or find the Ameba terminal.",
 			})
-			console.error("amebaBuild: terminalInfo is undefined. Aborting build.")
+			console.error("amebaMonitor: terminalInfo is undefined. Aborting build.")
 			return Empty.create({})
 		}
 
