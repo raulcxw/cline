@@ -15,6 +15,15 @@ interface FlashRegionInfo {
 	lineNumber: number // 该条目在文件中的行号（1-based）
 }
 
+async function fileExists(filePath: string): Promise<boolean> {
+	try {
+		await fs.access(filePath)
+		return true
+	} catch {
+		return false
+	}
+}
+
 /**
  * 解析结果接口（新增表格定义行号）
  */
@@ -258,6 +267,10 @@ export async function amebaFlash(controller: Controller, _request: EmptyRequest)
 			`Flash layout parsed successfully. Opened ${path.basename(flashCfgPath)} at Flash_Layout definition (line ${parseResult.definitionLine}).`,
 		)
 
+		// 执行烧录命令
+		const flashProjectDirName = `${icSelection}_gcc_project`
+		const flashDir = path.join(sdkRoot, flashProjectDirName)
+
 		// 构建烧录命令
 		const imageTypeToFileName = new Map<string, string>([
 			["IMG_BOOT", "km4_boot_all.bin"],
@@ -267,7 +280,32 @@ export async function amebaFlash(controller: Controller, _request: EmptyRequest)
 		const commandParts: string[] = ["python", "flash.py", "--port", serialPort]
 
 		for (const currentRegion of parseResult.layout) {
-			const imageFileName = imageTypeToFileName.get(currentRegion.type)
+			let imageFileName = imageTypeToFileName.get(currentRegion.type)
+
+			if (currentRegion.type === "IMG_APP_OTA1" && imageFileName) {
+				const defaultAppPath = path.join(flashDir, imageFileName)
+
+				// 檢查預設檔案是否存在
+				if (!(await fileExists(defaultAppPath))) {
+					console.log(`Default app image '${imageFileName}' not found. Searching for alternatives...`)
+
+					const alternative1 = "km0_km4_ca32_app.bin"
+					const alternative2 = "kr4_km4_app.bin"
+
+					// 檢查第一個備選方案
+					if (await fileExists(path.join(flashDir, alternative1))) {
+						console.log(`Found alternative: '${alternative1}'`)
+						imageFileName = alternative1
+					}
+					// 檢查第二個備選方案
+					else if (await fileExists(path.join(flashDir, alternative2))) {
+						console.log(`Found alternative: '${alternative2}'`)
+						imageFileName = alternative2
+					} else {
+						console.log(`No alternative app images found. Using default '${imageFileName}' for the command.`)
+					}
+				}
+			}
 
 			if (imageFileName) {
 				try {
@@ -292,10 +330,6 @@ export async function amebaFlash(controller: Controller, _request: EmptyRequest)
 		}
 
 		const flashCommand = commandParts.join(" ")
-
-		// 执行烧录命令
-		const flashProjectDirName = `${icSelection}_gcc_project`
-		const flashDir = path.join(sdkRoot, flashProjectDirName)
 
 		const terminalManager = controller.amebaTerminalManager
 		const terminalInfo = await terminalManager.getOrCreateAmebaTerminal(sdkRoot)
