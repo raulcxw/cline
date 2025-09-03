@@ -115,10 +115,13 @@ const AmebaServiceModal: React.FC = () => {
 	const icDropdownWidth = isIcDropdownOpen ? longestIcWidth : selectedIcWidth
 
 	// --- [修改] 事件處理函式名稱，使其更語意化 ---
-	const handleIcDropdownOpen = () => {
-		setIsIcDropdownOpen(true)
+	const handleIcDropdownToggle = () => {
+		// 使用函數式更新，根據當前狀態進行切換
+		setIsIcDropdownOpen((current) => !current)
 	}
+
 	const handleIcDropdownClose = () => {
+		// 這個函式仍然需要，用於「強制關閉」的場景（如 onBlur 或選擇選項）
 		setIsIcDropdownOpen(false)
 	}
 
@@ -165,7 +168,7 @@ const AmebaServiceModal: React.FC = () => {
 	}
 
 	const handleIcSelectionChange = async (e: any) => {
-		handleIcDropdownClose()
+		//handleIcDropdownClose()
 		const newIc = e.target.value
 		if (newIc && newIc !== amebaIcSelection) {
 			try {
@@ -258,11 +261,11 @@ const AmebaServiceModal: React.FC = () => {
 					disabled={!isAmebaSdkReady}
 					onBlur={handleIcDropdownClose}
 					onChange={handleIcSelectionChange}
-					onMouseDown={handleIcDropdownOpen}
+					onMouseDown={handleIcDropdownToggle}
 					style={{ minWidth: icDropdownWidth }}
 					value={amebaIcSelection || ""}>
 					{(amebaIcVariants || []).map((variant) => (
-						<StyledOption key={variant} value={variant}>
+						<StyledOption key={variant} onClick={handleIcDropdownClose} value={variant}>
 							{variant}
 						</StyledOption>
 					))}

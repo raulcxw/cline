@@ -831,6 +831,7 @@ export class Controller {
 	public async setAmebaIcSelection(icSelection: string | undefined): Promise<void> {
 		this.cacheService.setGlobalState("amebaIcSelection", icSelection)
 		console.log(`[Controller] Ameba IC selection updated to: ${icSelection}`)
+		await this.postStateToWebview()
 	}
 
 	private async setAmebaSdkVersion(version: string | undefined): Promise<void> {
