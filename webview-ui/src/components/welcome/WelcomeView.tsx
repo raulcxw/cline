@@ -2,6 +2,7 @@ import { BooleanRequest, EmptyRequest } from "@shared/proto/cline/common"
 import { VSCodeButton, VSCodeLink } from "@vscode/webview-ui-toolkit/react"
 import { memo, useEffect, useState } from "react"
 import ClineLogoWhite from "@/assets/ClineLogoWhite"
+import RtkLogoVariable from "@/assets/RTKLogoVariable"
 import ApiOptions from "@/components/settings/ApiOptions"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { AccountServiceClient, StateServiceClient } from "@/services/grpc-client"
@@ -35,10 +36,18 @@ const WelcomeView = memo(() => {
 	return (
 		<div className="fixed inset-0 p-0 flex flex-col">
 			<div className="h-full px-5 overflow-auto">
-				<h2>Hi, I'm Cline</h2>
-				<div className="flex justify-center my-5">
+				{/* realtek ameba add start*/}
+				<h2>Hi, I'm Cline x Ameba</h2>
+				<div className="flex justify-center my-5 items-center gap-x-4">
 					<ClineLogoWhite className="size-16" />
+					<span
+						className="text-5xl font-light"
+						style={{ color: "var(--vscode-disabledForeground)", transform: "translateY(0px)" }}>
+						&times;
+					</span>
+					<RtkLogoVariable className="size-20" style={{ transform: "translateY(2px)" }} />
 				</div>
+				{/* realtek ameba add end*/}
 				<p>
 					I can do all kinds of tasks thanks to breakthroughs in{" "}
 					<VSCodeLink className="inline" href="https://www.anthropic.com/claude/sonnet">
@@ -54,9 +63,15 @@ const WelcomeView = memo(() => {
 					3.7 Sonnet.
 				</p>
 
-				<VSCodeButton appearance="primary" className="w-full mt-1" onClick={handleLogin}>
+				{/* realtek ameba add start*/}
+				<VSCodeButton appearance="primary" className="w-full mt-4" onClick={handleLogin}>
 					Get Started for Free
 				</VSCodeButton>
+
+				<VSCodeButton appearance="primary" className="w-full mt-2.5" onClick={handleSubmit}>
+					Use Ameba Only
+				</VSCodeButton>
+				{/* realtek ameba add end*/}
 
 				{!showApiOptions && (
 					<VSCodeButton
