@@ -205,6 +205,7 @@ export const ExtensionStateContextProvider: React.FC<{
 		useAutoCondense: true,
 		/* realtek ameba add start*/
 		amebaSdkRoot: undefined, // 初始化为 undefined 或空字符串 ""
+		amebaSdkVersion: undefined, // 初始化为 undefined 或空字符串 ""
 		amebaToolChainEnv: undefined, // 初始化为 undefined 或空字符串 ""
 		amebaIcSelection: undefined, // 初始化为 undefined 或空字符串 ""
 		amebaIcVariants: [], // 这是修复错误的关键，初始化为一个空数组

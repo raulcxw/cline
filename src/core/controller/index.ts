@@ -675,6 +675,7 @@ export class Controller {
 
 		/* realtek ameba add start*/
 		const amebaSdkRoot = this.cacheService.getGlobalStateKey("amebaSdkRoot")
+		const amebaSdkVersion = this.cacheService.getGlobalStateKey("amebaSdkVersion")
 		const amebaIcSelection = this.cacheService.getGlobalStateKey("amebaIcSelection")
 		const amebaSerialPorts = this.cacheService.getGlobalStateKey("amebaSerialPorts")
 		const amebaSelectedSerialPort = this.cacheService.getGlobalStateKey("amebaSelectedSerialPort")
@@ -742,6 +743,7 @@ export class Controller {
 			customPrompt,
 			/* realtek ameba add start*/
 			amebaSdkRoot: amebaSdkRoot as string | undefined,
+			amebaSdkVersion: amebaSdkVersion as string | undefined,
 			amebaIcSelection: amebaIcSelection as string | undefined, // [修改] 移除預設值，讓選擇邏輯更健壯
 			// [修改] 使用從快取讀取的動態列表
 			amebaIcVariants: (amebaIcVariants as string[] | undefined) || [],
@@ -823,15 +825,20 @@ export class Controller {
 					message: `Ameba SDK path automatically set to: ${sdkRoot}`,
 				})
 			}
-
-			await this.postStateToWebview()
 		}
 	}
 
 	public async setAmebaIcSelection(icSelection: string | undefined): Promise<void> {
 		this.cacheService.setGlobalState("amebaIcSelection", icSelection)
 		console.log(`[Controller] Ameba IC selection updated to: ${icSelection}`)
-		await this.postStateToWebview()
+	}
+
+	private async setAmebaSdkVersion(version: string | undefined): Promise<void> {
+		const currentVersion = this.cacheService.getGlobalStateKey("amebaSdkVersion")
+		if (version !== currentVersion) {
+			this.cacheService.setGlobalState("amebaSdkVersion", version)
+			console.log(`[Controller] Ameba SDK Version updated to: ${version}`)
+		}
 	}
 
 	// [新增] 儲存 IC 變體列表並更新當前選擇
@@ -880,6 +887,33 @@ export class Controller {
 		}
 	}
 
+	private async parseAmebaRtosVersion(sdkRoot: string): Promise<string | undefined> {
+		const versionFilePath = path.join(sdkRoot, "component", "soc", "common", "include", "ameba_rtos_version.h")
+		try {
+			if (!(await fileExistsAtPath(versionFilePath))) {
+				console.warn(`[Ameba SDK] Version file not found at: ${versionFilePath}`)
+				return undefined
+			}
+
+			const content = await fs.readFile(versionFilePath, "utf-8")
+			const majorMatch = content.match(/#define\s+AMEBA_RTOS_VERSION_MAJOR\s+(\d+)/)
+			const minorMatch = content.match(/#define\s+AMEBA_RTOS_VERSION_MINOR\s+(\d+)/)
+			const patchMatch = content.match(/#define\s+AMEBA_RTOS_VERSION_PATCH\s+(\d+)/)
+
+			if (majorMatch && minorMatch && patchMatch) {
+				const version = `${majorMatch[1]}.${minorMatch[1]}.${patchMatch[1]}`
+				console.log(`[Ameba SDK] Parsed SDK version: ${version}`)
+				return version
+			}
+
+			console.warn(`[Ameba SDK] Could not parse version numbers from ${versionFilePath}`)
+			return undefined
+		} catch (error) {
+			console.error(`[Ameba SDK] Error reading or parsing version file:`, error)
+			return undefined
+		}
+	}
+
 	private async findAmebaSdkRoot(searchDir: string): Promise<string | undefined> {
 		console.log(`[Ameba SDK] Starting search in: ${searchDir}`)
 		const queue: string[] = [searchDir]
@@ -925,28 +959,32 @@ export class Controller {
 			await this.setAmebaToolChainEnv(undefined)
 			// [修改] 當沒有工作區時，清空 IC 列表
 			await this.setAmebaIcVariants([])
+			await this.setAmebaSdkVersion(undefined)
+			await this.postStateToWebview()
 			return
 		}
 
 		const rootPath = workspaceFolders[0]
 		const foundSdkPath = await this.findAmebaSdkRoot(rootPath)
 
+		await this.setAmebaSdkRoot(foundSdkPath)
+
 		if (foundSdkPath) {
-			await this.setAmebaSdkRoot(foundSdkPath)
-			// [修改] 找到 SDK 後，動態生成並設定 IC 列表
+			const version = await this.parseAmebaRtosVersion(foundSdkPath)
 			const variants = await this.getAmebaIcVariantsFromSdk(foundSdkPath)
+			await this.setAmebaSdkVersion(version)
 			await this.setAmebaIcVariants(variants)
 			await this.checkAndSetupAmebaToolChainEnv(foundSdkPath)
 		} else {
-			await this.setAmebaSdkRoot(undefined)
 			await this.setAmebaToolChainEnv(undefined)
-			// [修改] 未找到 SDK 時，清空 IC 列表
+			await this.setAmebaSdkVersion(undefined)
 			await this.setAmebaIcVariants([])
 			HostProvider.window.showMessage({
 				type: ShowMessageType.WARNING,
 				message: "Ameba SDK not found in the workspace. Please open an Ameba SDK project or set the path manually.",
 			})
 		}
+		await this.postStateToWebview()
 	}
 
 	public async setAmebaToolChainEnv(envPath: string | undefined): Promise<void> {

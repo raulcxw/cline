@@ -781,6 +781,7 @@ export class CacheService {
 
 			/* realtek ameba add start*/
 			amebaSdkRoot: state.amebaSdkRoot,
+			amebaSdkVersion: state.amebaSdkVersion,
 			amebaToolChainEnv: state.amebaToolChainEnv,
 			amebaIcSelection: state.amebaIcSelection,
 			amebaIcVariants: state.amebaIcVariants,

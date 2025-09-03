@@ -85,8 +85,15 @@ const calculateTextWidth = (text: string | null | undefined, font: string): stri
 }
 
 const AmebaServiceModal: React.FC = () => {
-	const { amebaSdkRoot, amebaToolChainEnv, amebaIcSelection, amebaIcVariants, amebaSerialPorts, amebaSelectedSerialPort } =
-		useExtensionState()
+	const {
+		amebaSdkRoot,
+		amebaSdkVersion,
+		amebaToolChainEnv,
+		amebaIcSelection,
+		amebaIcVariants,
+		amebaSerialPorts,
+		amebaSelectedSerialPort,
+	} = useExtensionState()
 
 	const [isIcDropdownOpen, setIsIcDropdownOpen] = useState(false)
 	const isAmebaSdkReady = !!(amebaSdkRoot && amebaToolChainEnv)
@@ -204,8 +211,7 @@ const AmebaServiceModal: React.FC = () => {
 
 	const getChipTooltipText = (): string => {
 		if (isAmebaSdkReady) {
-			const sdkVersion = "v1.1"
-			const details = [`SDK Path: ${amebaSdkRoot}`, `Toolchain Path: ${amebaToolChainEnv}`, `SDK Ver: ${sdkVersion}`]
+			const details = [`Sdk Path: ${amebaSdkRoot}`, `Toolchain: ${amebaToolChainEnv}`, `Sdk Ver: v${amebaSdkVersion}`]
 			return details.join("\n")
 		}
 		return disabledTooltipText

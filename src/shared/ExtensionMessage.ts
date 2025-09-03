@@ -79,6 +79,7 @@ export interface ExtensionState {
 	customPrompt?: string
 	/* realtek ameba add start*/
 	amebaSdkRoot?: string // Ameba SDK 的根目录路径
+	amebaSdkVersion?: string
 	amebaToolChainEnv?: string // Ameba Toolchain 目录路径
 	amebaIcSelection?: string // 当前选择的 IC 型号 (例如 "amebadplus")
 	amebaIcVariants: string[] // 所有支持的 IC 型号列表，用于前端下拉菜单

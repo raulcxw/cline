@@ -179,6 +179,7 @@ export type GlobalStateKey =
 	| "actModeVercelAiGatewayModelInfo"
 	/* realtek ameba add start*/
 	| "amebaSdkRoot"
+	| "amebaSdkVersion"
 	| "amebaToolChainEnv"
 	| "amebaIcSelection"
 	| "amebaIcVariants"
@@ -317,6 +318,7 @@ export interface GlobalState {
 	actModeVercelAiGatewayModelInfo: ModelInfo | undefined
 	/* realtek ameba add start*/
 	amebaSdkRoot: string | undefined
+	amebaSdkVersion: string | undefined
 	amebaToolChainEnv: string | undefined
 	amebaIcSelection: string | undefined
 	amebaIcVariants: string[] | undefined
