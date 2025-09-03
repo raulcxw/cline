@@ -216,6 +216,9 @@ const AmebaServiceModal: React.FC = () => {
 	const chipTooltipStyle: React.CSSProperties = {
 		left: "0px",
 		zIndex: 1001,
+		minWidth: "180px", // 設定一個足夠的最小寬度，您可以根據需要微調
+		whiteSpace: "pre-wrap", // 關鍵屬性：保留換行符並防止不必要的自動換行
+		textAlign: "left", // 確保文字靠左對齊
 	}
 
 	const dropdownTooltipStyle: React.CSSProperties = {
@@ -224,6 +227,8 @@ const AmebaServiceModal: React.FC = () => {
 		zIndex: 1001,
 		whiteSpace: "nowrap",
 	}
+
+	const iconButtonTooltipStyle = isAmebaSdkReady ? undefined : chipTooltipStyle
 
 	// --- 渲染部分 ---
 	return (
@@ -239,7 +244,9 @@ const AmebaServiceModal: React.FC = () => {
 					}}></span>
 			</Tooltip>
 
-			<Tooltip style={dropdownTooltipStyle} tipText={isAmebaSdkReady ? "Select Chip" : disabledTooltipText}>
+			<Tooltip
+				style={isAmebaSdkReady ? dropdownTooltipStyle : chipTooltipStyle}
+				tipText={isAmebaSdkReady ? "Select Chip" : disabledTooltipText}>
 				{/* --- [核心修改] 將 onFocus 改為 onMouseDown --- */}
 				<StyledLinkDropdown
 					disabled={!isAmebaSdkReady}
@@ -256,7 +263,9 @@ const AmebaServiceModal: React.FC = () => {
 				</StyledLinkDropdown>
 			</Tooltip>
 
-			<Tooltip style={dropdownTooltipStyle} tipText={isAmebaSdkReady ? "Select Serial Port" : disabledTooltipText}>
+			<Tooltip
+				style={isAmebaSdkReady ? dropdownTooltipStyle : chipTooltipStyle}
+				tipText={isAmebaSdkReady ? "Select Serial Port" : disabledTooltipText}>
 				<StyledLinkDropdown
 					disabled={!isAmebaSdkReady}
 					key={portDropdownKey}
@@ -277,7 +286,7 @@ const AmebaServiceModal: React.FC = () => {
 				</StyledLinkDropdown>
 			</Tooltip>
 
-			<Tooltip tipText={isAmebaSdkReady ? "Ameba Menuconfig" : disabledTooltipText}>
+			<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Menuconfig" : disabledTooltipText}>
 				<VSCodeButton
 					appearance="icon"
 					aria-label="Ameba Menuconfig"
@@ -287,19 +296,19 @@ const AmebaServiceModal: React.FC = () => {
 				</VSCodeButton>
 			</Tooltip>
 
-			<Tooltip tipText={isAmebaSdkReady ? "Ameba Build" : disabledTooltipText}>
+			<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Build" : disabledTooltipText}>
 				<VSCodeButton appearance="icon" aria-label="Ameba Build" disabled={!isAmebaSdkReady} onClick={handleBuildClick}>
 					<span className="codicon codicon-tools" />
 				</VSCodeButton>
 			</Tooltip>
 
-			<Tooltip tipText={isAmebaSdkReady ? "Ameba Flash" : disabledTooltipText}>
+			<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Flash" : disabledTooltipText}>
 				<VSCodeButton appearance="icon" aria-label="Ameba Flash" disabled={!isAmebaSdkReady} onClick={handleFlashClick}>
 					<span className="codicon codicon-symbol-event" />
 				</VSCodeButton>
 			</Tooltip>
 
-			<Tooltip tipText={isAmebaSdkReady ? "Ameba Monitor" : disabledTooltipText}>
+			<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Monitor" : disabledTooltipText}>
 				<VSCodeButton
 					appearance="icon"
 					aria-label="Ameba Monitor"
@@ -309,7 +318,7 @@ const AmebaServiceModal: React.FC = () => {
 				</VSCodeButton>
 			</Tooltip>
 
-			<Tooltip tipText="Open Ameba Documentation">
+			<Tooltip tipText="Ameba Documents">
 				<VSCodeButton appearance="icon" aria-label="Ameba Doc" onClick={handleOpenDocsClick}>
 					<span className="codicon codicon-book" />
 				</VSCodeButton>
