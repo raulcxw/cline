@@ -42,7 +42,9 @@ service WindowService {
 message ShowTextDocumentRequest {
   cline.Metadata metadata = 1;
   string path = 2;
-  optional ShowTextDocumentOptions options = 3;
+  /* realtek ameba add start*/
+  optional ShowTextDocumentOptions options = 5;
+  /* realtek ameba add end*/
 }
 
 // See https://code.visualstudio.com/api/references/vscode-api#TextDocumentShowOptions
@@ -50,6 +52,10 @@ message ShowTextDocumentOptions {
   optional bool preview = 1;
   optional bool preserve_focus = 2;
   optional int32 view_column = 3;
+  /* realtek ameba add start*/
+  optional int32 start_line = 4;
+  optional int32 start_character = 5;
+  /* realtek ameba add end*/
 }
 
 message TextEditorInfo {

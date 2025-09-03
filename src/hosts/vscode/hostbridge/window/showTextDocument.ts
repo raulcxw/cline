@@ -36,6 +36,24 @@ export async function showTextDocument(request: ShowTextDocumentRequest): Promis
 		options.viewColumn = request.options.viewColumn
 	}
 
+	/* realtek ameba add start*/
+	if (request.options?.startLine !== undefined) {
+		// 1. 转换为 VSCode 要求的 0-based 行号（日志中的 74 行 → 73）
+		const targetLine = Math.max(0, request.options.startLine - 1)
+		// 2. 处理列号（默认 0，即行首）
+		const targetChar = request.options.startCharacter
+			? Math.max(0, request.options.startCharacter - 1) // 列号同样 1-based → 0-based
+			: 0
+		// 3. 创建 Range 对象（光标定位到目标行/列）
+		options.selection = new vscode.Range(
+			targetLine, // 开始行
+			targetChar, // 开始列
+			targetLine, // 结束行（与开始行相同 = 光标定位，非选中）
+			targetChar, // 结束列
+		)
+	}
+	/* realtek ameba add end*/
+
 	const editor = await vscode.window.showTextDocument(uri, options)
 
 	return TextEditorInfo.create({

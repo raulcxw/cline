@@ -2,7 +2,7 @@ import { Empty, EmptyRequest } from "@shared/proto/cline/common"
 import * as fs from "fs/promises"
 import * as path from "path"
 import { HostProvider } from "@/hosts/host-provider"
-import { ShowMessageType } from "@/shared/proto/host/window"
+import { ShowMessageType, ShowTextDocumentOptions, ShowTextDocumentRequest } from "@/shared/proto/host/window"
 import type { Controller } from "../index"
 
 /**
@@ -12,43 +12,113 @@ interface FlashRegionInfo {
 	type: string
 	startAddr: string
 	endAddr: string
+	lineNumber: number // 该条目在文件中的行号（1-based）
 }
 
 /**
- * Parses the content of ameba_flashcfg.c to extract the Flash_Layout array.
- * @param fileContent The string content of the C file.
- * @returns An array of FlashRegionInfo objects.
+ * 解析结果接口（新增表格定义行号）
  */
-function parseFlashLayout(fileContent: string): FlashRegionInfo[] {
-	const layout: FlashRegionInfo[] = []
-	// Regex to match lines like: {IMG_BOOT, 0x08000000, 0x08013FFF}
-	const regex = /\{\s*(\w+)\s*,\s*(0x[0-9a-fA-F]+)\s*,\s*(0x[0-9a-fA-F]+)\s*\}/g
+interface FlashLayoutParseResult {
+	layout: FlashRegionInfo[]
+	definitionLine: number // Flash_Layout表格定义所在的行号（1-based）
+}
 
-	let match: RegExpExecArray | null
-	while ((match = regex.exec(fileContent)) !== null) {
-		// Ignore the final entry {0xFF, 0xFFFFFFFF, 0xFFFFFFFF}
-		if (match[1] === "0xFF") {
+/**
+ * 精确解析const FlashLayoutInfo_TypeDef Flash_Layout[]表格
+ * @param fileContent C文件内容
+ * @param filePath 文件路径（用于错误提示）
+ * @returns 解析结果（包含表格内容和定义行号）
+ */
+function parseFlashLayout(fileContent: string, filePath: string): FlashLayoutParseResult {
+	const result: FlashLayoutParseResult = {
+		layout: [],
+		definitionLine: -1,
+	}
+	const lines = fileContent.split(/\r?\n/)
+
+	// 1. 先收集所有符合条件的Flash_Layout定义行（兼容有无const、多个定义）
+	const targetDefinitionRegex = /^\s*(const\s+)?FlashLayoutInfo_TypeDef\s+Flash_Layout/
+	const layoutDefinitions: { lineNumber: number; lineIndex: number }[] = [] // 存储所有定义行的“行号”和“数组索引”
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i]
+		if (targetDefinitionRegex.test(line)) {
+			layoutDefinitions.push({
+				lineNumber: i + 1, // 行号（1-based）
+				lineIndex: i, // 数组索引（0-based，用于后续定位解析起点）
+			})
+		}
+	}
+
+	// 2. 确定目标定义行：1个则选唯一，≥2个则选最后一个（第二个）
+	if (layoutDefinitions.length === 0) {
+		throw new Error(`Could not find 'FlashLayoutInfo_TypeDef Flash_Layout' definition in ${filePath}`)
+	}
+	const targetDef = layoutDefinitions.length >= 2 ? layoutDefinitions[layoutDefinitions.length - 1] : layoutDefinitions[0]
+	result.definitionLine = targetDef.lineNumber // 记录目标行号
+
+	// 3. 从目标定义行开始解析表格内容（保留原解析逻辑）
+	let inTargetLayout = false
+	let braceCount = 0 // 用于处理嵌套大括号的情况
+	for (let i = targetDef.lineIndex; i < lines.length; i++) {
+		// 从目标定义行的索引开始遍历
+		const lineNumber = i + 1 // 行号从1开始
+		const line = lines[i]
+
+		// 找到目标表格定义行（触发解析）
+		if (!inTargetLayout && targetDefinitionRegex.test(line)) {
+			inTargetLayout = true
+			braceCount = 1 // 已找到一个起始大括号（定义行包含“{”）
 			continue
 		}
-		layout.push({
-			type: match[1],
-			startAddr: match[2],
-			endAddr: match[3],
-		})
+
+		// 解析目标表格内部内容
+		if (inTargetLayout) {
+			// 统计大括号数量，处理嵌套情况
+			braceCount += (line.match(/{/g) || []).length
+			braceCount -= (line.match(/}/g) || []).length
+
+			// 匹配表格条目：{IMG_BOOT, 0x08000000, 0x08013FFF}
+			const entryRegex = /\{\s*(\w+)\s*,\s*(0x[0-9a-fA-F]+)\s*,\s*(0x[0-9a-fA-F]+)\s*\}/g
+			let match: RegExpExecArray | null
+
+			while ((match = entryRegex.exec(line)) !== null) {
+				// 忽略终止条目
+				if (match[1] === "0xFF") {
+					continue
+				}
+
+				result.layout.push({
+					type: match[1],
+					startAddr: match[2],
+					endAddr: match[3],
+					lineNumber: lineNumber,
+				})
+			}
+
+			// 表格结束（大括号闭合）
+			if (braceCount === 0) {
+				inTargetLayout = false
+				break // 只解析目标表格
+			}
+		}
 	}
-	return layout
+
+	// 验证解析结果
+	if (result.layout.length === 0) {
+		throw new Error(`No valid entries found in 'Flash_Layout' table (line ${result.definitionLine}) in ${filePath}`)
+	}
+
+	return result
 }
 
 /**
- * Validates the parsed flash layout against a set of rules.
- * @param layout The array of FlashRegionInfo objects.
- * @returns An object with validation status and an error message if invalid.
+ * 验证解析的flash布局
  */
 function validateFlashLayout(layout: FlashRegionInfo[]): { isValid: boolean; error?: string } {
-	// Rule 3.1: Filter out placeholder entries before validation.
+	// 过滤占位条目
 	const validRegions = layout.filter((region) => !(region.startAddr === "0xFFFFFFFF" && region.endAddr === "0xFFFFFFFF"))
 
-	// Sort by start address to make overlap checks easier.
+	// 按起始地址排序
 	try {
 		validRegions.sort((a, b) => parseInt(a.startAddr, 16) - parseInt(b.startAddr, 16))
 	} catch (e) {
@@ -61,40 +131,39 @@ function validateFlashLayout(layout: FlashRegionInfo[]): { isValid: boolean; err
 		const endNum = parseInt(region.endAddr, 16)
 
 		if (isNaN(startNum) || isNaN(endNum)) {
-			return { isValid: false, error: `Region ${region.type} has a non-hexadecimal address.` }
+			return { isValid: false, error: `Region ${region.type} (line ${region.lineNumber}) has a non-hexadecimal address.` }
 		}
 
-		// Rule 3.2: Start address must be less than end address.
+		// 起始地址必须小于结束地址
 		if (startNum >= endNum) {
 			return {
 				isValid: false,
-				error: `Validation failed for region ${region.type}: Start address (${region.startAddr}) must be less than end address (${region.endAddr}).`,
+				error: `Validation failed for region ${region.type} (line ${region.lineNumber}): Start address (${region.startAddr}) must be less than end address (${region.endAddr}).`,
 			}
 		}
 
-		// Rule 3.3 & 3.4: Check for 4K alignment and "0x" prefix.
+		// 4K对齐检查
 		if (!/^0x[0-9a-fA-F]+000$/.test(region.startAddr)) {
 			return {
 				isValid: false,
-				error: `Validation failed for region ${region.type}: Start address (${region.startAddr}) is not 4K-aligned (must end in '000').`,
+				error: `Validation failed for region ${region.type} (line ${region.lineNumber}): Start address (${region.startAddr}) is not 4K-aligned (must end in '000').`,
 			}
 		}
 		if (!/^0x[0-9a-fA-F]+FFF$/.test(region.endAddr)) {
 			return {
 				isValid: false,
-				error: `Validation failed for region ${region.type}: End address (${region.endAddr}) is not 4K-aligned (must end in 'FFF').`,
+				error: `Validation failed for region ${region.type} (line ${region.lineNumber}): End address (${region.endAddr}) is not 4K-aligned (must end in 'FFF').`,
 			}
 		}
 
-		// Rule 3.5: Check for address range overlap with the next region.
+		// 检查区域重叠
 		if (i + 1 < validRegions.length) {
 			const nextRegion = validRegions[i + 1]
 			const nextStartNum = parseInt(nextRegion.startAddr, 16)
-			// If the current region's end address is greater than or equal to the next region's start, they overlap.
 			if (endNum >= nextStartNum) {
 				return {
 					isValid: false,
-					error: `Validation failed: Address range of region ${region.type} (${region.startAddr} - ${region.endAddr}) overlaps with region ${nextRegion.type} (${nextRegion.startAddr}).`,
+					error: `Validation failed: Region ${region.type} (line ${region.lineNumber}) (${region.startAddr} - ${region.endAddr}) overlaps with region ${nextRegion.type} (line ${nextRegion.lineNumber}) (${nextRegion.startAddr}).`,
 				}
 			}
 		}
@@ -103,9 +172,33 @@ function validateFlashLayout(layout: FlashRegionInfo[]): { isValid: boolean; err
 	return { isValid: true }
 }
 
+/**
+ * 打开ameba_flashcfg.c并定位到Flash_Layout表格定义行
+ */
+async function openFlashCfgFileAtLayoutDefinition(filePath: string, definitionLine: number) {
+	try {
+		await HostProvider.window.showTextDocument({
+			path: filePath,
+			options: {
+				preview: false,
+				preserveFocus: false,
+				startLine: definitionLine, // 定位到表格定义行
+				startCharacter: 1,
+			},
+		})
+		console.log(`Successfully opened ${filePath} at Flash_Layout definition (line ${definitionLine})`)
+	} catch (error) {
+		const errorMsg = error instanceof Error ? error.message : String(error)
+		HostProvider.window.showMessage({
+			type: ShowMessageType.ERROR,
+			message: `Failed to open flash config file: ${errorMsg}`,
+		})
+	}
+}
+
 export async function amebaFlash(controller: Controller, _request: EmptyRequest): Promise<Empty> {
 	try {
-		// 1. & 2. Get and check settings (now with English messages)
+		// 检查配置
 		const sdkRoot = await controller.getAmebaSdkRoot()
 		const icSelection = await controller.getAmebaIcSelection()
 		const serialPort = await controller.getSelectedAmebaSerialPort()
@@ -132,16 +225,13 @@ export async function amebaFlash(controller: Controller, _request: EmptyRequest)
 			return Empty.create({})
 		}
 
-		// 3. Read and parse ameba_flashcfg.c
+		// 读取并解析配置文件
 		const flashCfgPath = path.join(sdkRoot, "component", "soc", "usrcfg", icSelection, "ameba_flashcfg.c")
-		let flashLayout: FlashRegionInfo[] = []
+		let parseResult: FlashLayoutParseResult
 
 		try {
 			const fileContent = await fs.readFile(flashCfgPath, "utf-8")
-			flashLayout = parseFlashLayout(fileContent)
-			if (flashLayout.length === 0) {
-				throw new Error(`Could not parse any flash layout information from ${flashCfgPath}.`)
-			}
+			parseResult = parseFlashLayout(fileContent, flashCfgPath)
 		} catch (parseError) {
 			const userMessage = parseError instanceof Error ? parseError.message : String(parseError)
 			HostProvider.window.showMessage({
@@ -151,9 +241,10 @@ export async function amebaFlash(controller: Controller, _request: EmptyRequest)
 			return Empty.create({})
 		}
 
-		// *** NEW: Validate the parsed layout ***
-		const validationResult = validateFlashLayout(flashLayout)
+		// 验证布局
+		const validationResult = validateFlashLayout(parseResult.layout)
 		if (!validationResult.isValid) {
+			await openFlashCfgFileAtLayoutDefinition(flashCfgPath, parseResult.definitionLine)
 			HostProvider.window.showMessage({
 				type: ShowMessageType.ERROR,
 				message: `Invalid flash layout in ${flashCfgPath}: ${validationResult.error}`,
@@ -161,27 +252,33 @@ export async function amebaFlash(controller: Controller, _request: EmptyRequest)
 			return Empty.create({})
 		}
 
-		// 4. Define the mapping from image type to actual firmware file name.
+		// 验证成功，打开文件并定位到表格定义行
+		await openFlashCfgFileAtLayoutDefinition(flashCfgPath, parseResult.definitionLine)
+		console.log(
+			`Flash layout parsed successfully. Opened ${path.basename(flashCfgPath)} at Flash_Layout definition (line ${parseResult.definitionLine}).`,
+		)
+
+		// 构建烧录命令
 		const imageTypeToFileName = new Map<string, string>([
 			["IMG_BOOT", "km4_boot_all.bin"],
 			["IMG_APP_OTA1", "km0_km4_app.bin"],
 		])
 
-		// 5. Build the flash command based on the parsed layout.
 		const commandParts: string[] = ["python", "flash.py", "--port", serialPort]
 
-		for (const currentRegion of flashLayout) {
+		for (const currentRegion of parseResult.layout) {
 			const imageFileName = imageTypeToFileName.get(currentRegion.type)
 
 			if (imageFileName) {
-				// Requirement 2: Always use endAddr + 1 for the command's end address.
 				try {
 					const endAddrNum = parseInt(currentRegion.endAddr, 16)
 					const commandEndAddr = `0x${(endAddrNum + 1).toString(16).toUpperCase()}`
 					commandParts.push("--image", imageFileName, currentRegion.startAddr, commandEndAddr)
 				} catch (e) {
-					// This should not happen due to prior validation, but it's good practice.
-					console.error(`Could not calculate end address for ${currentRegion.type}:`, e)
+					console.error(
+						`Could not calculate end address for ${currentRegion.type} (line ${currentRegion.lineNumber}):`,
+						e,
+					)
 				}
 			}
 		}
@@ -189,15 +286,14 @@ export async function amebaFlash(controller: Controller, _request: EmptyRequest)
 		if (commandParts.length <= 4) {
 			HostProvider.window.showMessage({
 				type: ShowMessageType.ERROR,
-				message:
-					"No burnable image types (like IMG_BOOT, IMG_APP_OTA1) defined in the mapping were found in the config file.",
+				message: "No burnable image types (like IMG_BOOT, IMG_APP_OTA1) found in the Flash_Layout table.",
 			})
 			return Empty.create({})
 		}
 
 		const flashCommand = commandParts.join(" ")
 
-		// 6. Get the terminal and execute the command.
+		// 执行烧录命令
 		const flashProjectDirName = `${icSelection}_gcc_project`
 		const flashDir = path.join(sdkRoot, flashProjectDirName)
 
