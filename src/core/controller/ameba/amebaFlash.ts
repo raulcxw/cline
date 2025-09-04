@@ -2,17 +2,14 @@ import { Empty, EmptyRequest } from "@shared/proto/cline/common"
 import * as fs from "fs/promises"
 import * as path from "path"
 import { HostProvider } from "@/hosts/host-provider"
-import { ShowMessageType, ShowTextDocumentOptions, ShowTextDocumentRequest } from "@/shared/proto/host/window"
+import { ShowMessageType } from "@/shared/proto/host/window"
 import type { Controller } from "../index"
 
-/**
- * Defines the structure for a parsed flash memory region.
- */
 interface FlashRegionInfo {
 	type: string
 	startAddr: string
 	endAddr: string
-	lineNumber: number // 该条目在文件中的行号（1-based）
+	lineNumber: number
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -24,78 +21,59 @@ async function fileExists(filePath: string): Promise<boolean> {
 	}
 }
 
-/**
- * 解析结果接口（新增表格定义行号）
- */
 interface FlashLayoutParseResult {
 	layout: FlashRegionInfo[]
-	definitionLine: number // Flash_Layout表格定义所在的行号（1-based）
+	definitionLine: number
 }
 
-/**
- * 精确解析const FlashLayoutInfo_TypeDef Flash_Layout[]表格
- * @param fileContent C文件内容
- * @param filePath 文件路径（用于错误提示）
- * @returns 解析结果（包含表格内容和定义行号）
- */
 function parseFlashLayout(fileContent: string, filePath: string): FlashLayoutParseResult {
 	const result: FlashLayoutParseResult = {
 		layout: [],
 		definitionLine: -1,
 	}
 	const lines = fileContent.split(/\r?\n/)
-
-	// 1. 先收集所有符合条件的Flash_Layout定义行（兼容有无const、多个定义）
-	const targetDefinitionRegex = /^\s*(const\s+)?FlashLayoutInfo_TypeDef\s+Flash_Layout/
-	const layoutDefinitions: { lineNumber: number; lineIndex: number }[] = [] // 存储所有定义行的“行号”和“数组索引”
+	const targetDefinitionRegex = /^\s*(const\s+)?FlashLayoutInfo_TypeDef\s+Flash_Layout\s*\[\s*\]/
+	const layoutDefinitions: { lineNumber: number; lineIndex: number }[] = []
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i]
 		if (targetDefinitionRegex.test(line)) {
 			layoutDefinitions.push({
-				lineNumber: i + 1, // 行号（1-based）
-				lineIndex: i, // 数组索引（0-based，用于后续定位解析起点）
+				lineNumber: i + 1,
+				lineIndex: i,
 			})
 		}
 	}
-
-	// 2. 确定目标定义行：1个则选唯一，≥2个则选最后一个（第二个）
 	if (layoutDefinitions.length === 0) {
 		throw new Error(`Could not find 'FlashLayoutInfo_TypeDef Flash_Layout' definition in ${filePath}`)
 	}
 	const targetDef = layoutDefinitions.length >= 2 ? layoutDefinitions[layoutDefinitions.length - 1] : layoutDefinitions[0]
-	result.definitionLine = targetDef.lineNumber // 记录目标行号
-
-	// 3. 从目标定义行开始解析表格内容（保留原解析逻辑）
+	result.definitionLine = targetDef.lineNumber
 	let inTargetLayout = false
-	let braceCount = 0 // 用于处理嵌套大括号的情况
+	let braceCount = 0
 	for (let i = targetDef.lineIndex; i < lines.length; i++) {
-		// 从目标定义行的索引开始遍历
-		const lineNumber = i + 1 // 行号从1开始
+		const lineNumber = i + 1
 		const line = lines[i]
-
-		// 找到目标表格定义行（触发解析）
 		if (!inTargetLayout && targetDefinitionRegex.test(line)) {
 			inTargetLayout = true
-			braceCount = 1 // 已找到一个起始大括号（定义行包含“{”）
-			continue
+			if (line.includes("{")) {
+				braceCount += (line.match(/{/g) || []).length
+			}
+			if (line.includes("}")) {
+				braceCount -= (line.match(/}/g) || []).length
+			}
+			if (braceCount > 0) {
+				continue
+			}
 		}
-
-		// 解析目标表格内部内容
 		if (inTargetLayout) {
-			// 统计大括号数量，处理嵌套情况
 			braceCount += (line.match(/{/g) || []).length
 			braceCount -= (line.match(/}/g) || []).length
-
-			// 匹配表格条目：{IMG_BOOT, 0x08000000, 0x08013FFF}
 			const entryRegex = /\{\s*(\w+)\s*,\s*(0x[0-9a-fA-F]+)\s*,\s*(0x[0-9a-fA-F]+)\s*\}/g
 			let match: RegExpExecArray | null
-
 			while ((match = entryRegex.exec(line)) !== null) {
-				// 忽略终止条目
 				if (match[1] === "0xFF") {
 					continue
 				}
-
 				result.layout.push({
 					type: match[1],
 					startAddr: match[2],
@@ -103,55 +81,38 @@ function parseFlashLayout(fileContent: string, filePath: string): FlashLayoutPar
 					lineNumber: lineNumber,
 				})
 			}
-
-			// 表格结束（大括号闭合）
-			if (braceCount === 0) {
+			if (braceCount <= 0) {
 				inTargetLayout = false
-				break // 只解析目标表格
+				break
 			}
 		}
 	}
-
-	// 验证解析结果
 	if (result.layout.length === 0) {
 		throw new Error(`No valid entries found in 'Flash_Layout' table (line ${result.definitionLine}) in ${filePath}`)
 	}
-
 	return result
 }
 
-/**
- * 验证解析的flash布局
- */
 function validateFlashLayout(layout: FlashRegionInfo[]): { isValid: boolean; error?: string } {
-	// 过滤占位条目
 	const validRegions = layout.filter((region) => !(region.startAddr === "0xFFFFFFFF" && region.endAddr === "0xFFFFFFFF"))
-
-	// 按起始地址排序
 	try {
 		validRegions.sort((a, b) => parseInt(a.startAddr, 16) - parseInt(b.startAddr, 16))
 	} catch (e) {
 		return { isValid: false, error: "Failed to sort regions due to invalid hex address format." }
 	}
-
 	for (let i = 0; i < validRegions.length; i++) {
 		const region = validRegions[i]
 		const startNum = parseInt(region.startAddr, 16)
 		const endNum = parseInt(region.endAddr, 16)
-
 		if (isNaN(startNum) || isNaN(endNum)) {
 			return { isValid: false, error: `Region ${region.type} (line ${region.lineNumber}) has a non-hexadecimal address.` }
 		}
-
-		// 起始地址必须小于结束地址
 		if (startNum >= endNum) {
 			return {
 				isValid: false,
 				error: `Validation failed for region ${region.type} (line ${region.lineNumber}): Start address (${region.startAddr}) must be less than end address (${region.endAddr}).`,
 			}
 		}
-
-		// 4K对齐检查
 		if (!/^0x[0-9a-fA-F]+000$/.test(region.startAddr)) {
 			return {
 				isValid: false,
@@ -164,8 +125,6 @@ function validateFlashLayout(layout: FlashRegionInfo[]): { isValid: boolean; err
 				error: `Validation failed for region ${region.type} (line ${region.lineNumber}): End address (${region.endAddr}) is not 4K-aligned (must end in 'FFF').`,
 			}
 		}
-
-		// 检查区域重叠
 		if (i + 1 < validRegions.length) {
 			const nextRegion = validRegions[i + 1]
 			const nextStartNum = parseInt(nextRegion.startAddr, 16)
@@ -177,13 +136,9 @@ function validateFlashLayout(layout: FlashRegionInfo[]): { isValid: boolean; err
 			}
 		}
 	}
-
 	return { isValid: true }
 }
 
-/**
- * 打开ameba_flashcfg.c并定位到Flash_Layout表格定义行
- */
 async function openFlashCfgFileAtLayoutDefinition(filePath: string, definitionLine: number) {
 	try {
 		await HostProvider.window.showTextDocument({
@@ -191,7 +146,7 @@ async function openFlashCfgFileAtLayoutDefinition(filePath: string, definitionLi
 			options: {
 				preview: false,
 				preserveFocus: false,
-				startLine: definitionLine, // 定位到表格定义行
+				startLine: definitionLine,
 				startCharacter: 1,
 			},
 		})
@@ -205,39 +160,103 @@ async function openFlashCfgFileAtLayoutDefinition(filePath: string, definitionLi
 	}
 }
 
+/**
+ * @param sdkRoot
+ * @param icSelection
+ * @returns image_name
+ */
+async function getAppImageName(sdkRoot: string, icSelection: string): Promise<string> {
+	const projectDir = path.join(sdkRoot, `${icSelection}_gcc_project`)
+	const cmakeFilePath = path.join(projectDir, "CMakeLists.txt")
+	const configFilePath = path.join(projectDir, "build", ".config")
+
+	// 1. 读取.config文件
+	let configContent = ""
+	try {
+		configContent = await fs.readFile(configFilePath, "utf-8")
+	} catch (error) {
+		console.log(`'.config' file not found at ${configFilePath}. Assuming all configs are disabled.`)
+	}
+	const isConfigSet = (name: string): boolean => configContent.includes(`${name}=y`)
+
+	// 2. 读取 CMakeLists.txt
+	let cmakeContent: string
+	try {
+		cmakeContent = await fs.readFile(cmakeFilePath, "utf-8")
+	} catch (error) {
+		throw new Error(`CMakeLists.txt not found at ${cmakeFilePath}. Cannot determine flash image name.`)
+	}
+
+	// 3. 解析
+	let searchScope = cmakeContent
+
+	// 正则表达式，查询Config配置
+	const outerConditionRegex = /if\s*\(\s*(CONFIG_[\w_]+)\s*\)\s*([\s\S]*?)\s*else\s*\(\s*\)\s*([\s\S]*?)\s*endif\s*\(\s*\)/i
+	const outerMatch = cmakeContent.match(outerConditionRegex)
+
+	if (outerMatch) {
+		const configVar = outerMatch[1]
+		const ifBlock = outerMatch[2]
+		const elseBlock = outerMatch[3]
+
+		console.log(`Found outer conditional block based on: ${configVar}`)
+		if (isConfigSet(configVar)) {
+			console.log(`'${configVar}' is set. Searching for app_name in 'if' block.`)
+			searchScope = ifBlock
+		} else {
+			console.log(`'${configVar}' is not set. Searching for app_name in 'else' block.`)
+			searchScope = elseBlock
+		}
+	}
+
+	// 在確定的範圍內查找 app_name 的定義
+	// Regex: ameba_set_if( <CONFIG_VAR>  app_name  <name_if_true>  p_ELSE  <name_if_false> )
+	const appNameRegex = /ameba_set_if\s*\(\s*(CONFIG_[\w_]+)\s+app_name\s+([\w._-]+)\s+p_ELSE\s+([\w._-]+)\s*\)/
+	const appNameMatch = searchScope.match(appNameRegex)
+
+	if (appNameMatch) {
+		const innerConfigVar = appNameMatch[1]
+		const nameIfTrue = appNameMatch[2]
+		const nameIfFalse = appNameMatch[3]
+
+		return isConfigSet(innerConfigVar) ? nameIfTrue : nameIfFalse
+	}
+
+	// 如果沒有找到 ameba_set_if，嘗試尋找 ameba_firmware_package 的第一個參數（不含變數）
+	const firmwarePackageRegex = /ameba_firmware_package\s*\(\s*([\w._-]+)/
+	const packageMatch = searchScope.match(firmwarePackageRegex)
+	if (packageMatch) {
+		return packageMatch[1]
+	}
+
+	throw new Error(
+		`Could not parse app_name from ${cmakeFilePath}. Check 'ameba_set_if' or 'ameba_firmware_package' definitions.`,
+	)
+}
+
 export async function amebaFlash(controller: Controller, _request: EmptyRequest): Promise<Empty> {
 	try {
-		// 检查配置
+		// 1. 检查配置
 		const sdkRoot = await controller.getAmebaSdkRoot()
 		const icSelection = await controller.getAmebaIcSelection()
 		const serialPort = await controller.getSelectedAmebaSerialPort()
 
 		if (!sdkRoot) {
-			HostProvider.window.showMessage({
-				type: ShowMessageType.ERROR,
-				message: "Ameba SDK root directory not configured. Please open an Ameba SDK project.",
-			})
+			HostProvider.window.showMessage({ type: ShowMessageType.ERROR, message: "Ameba SDK root directory not configured." })
 			return Empty.create({})
 		}
 		if (!icSelection) {
-			HostProvider.window.showMessage({
-				type: ShowMessageType.ERROR,
-				message: "Ameba IC not selected. Please select Ameba IC.",
-			})
+			HostProvider.window.showMessage({ type: ShowMessageType.ERROR, message: "Ameba IC not selected." })
 			return Empty.create({})
 		}
 		if (!serialPort) {
-			HostProvider.window.showMessage({
-				type: ShowMessageType.ERROR,
-				message: "Serial Port not selected. Please select serial port.",
-			})
+			HostProvider.window.showMessage({ type: ShowMessageType.ERROR, message: "Serial Port not selected." })
 			return Empty.create({})
 		}
 
-		// 读取并解析配置文件
+		// 2. 解析 ameba_flashcfg.c
 		const flashCfgPath = path.join(sdkRoot, "component", "soc", "usrcfg", icSelection, "ameba_flashcfg.c")
 		let parseResult: FlashLayoutParseResult
-
 		try {
 			const fileContent = await fs.readFile(flashCfgPath, "utf-8")
 			parseResult = parseFlashLayout(fileContent, flashCfgPath)
@@ -250,10 +269,10 @@ export async function amebaFlash(controller: Controller, _request: EmptyRequest)
 			return Empty.create({})
 		}
 
-		// 验证布局
+		// 3. 检查Flash Layout
+		await openFlashCfgFileAtLayoutDefinition(flashCfgPath, parseResult.definitionLine)
 		const validationResult = validateFlashLayout(parseResult.layout)
 		if (!validationResult.isValid) {
-			await openFlashCfgFileAtLayoutDefinition(flashCfgPath, parseResult.definitionLine)
 			HostProvider.window.showMessage({
 				type: ShowMessageType.ERROR,
 				message: `Invalid flash layout in ${flashCfgPath}: ${validationResult.error}`,
@@ -261,53 +280,42 @@ export async function amebaFlash(controller: Controller, _request: EmptyRequest)
 			return Empty.create({})
 		}
 
-		// 验证成功，打开文件并定位到表格定义行
-		await openFlashCfgFileAtLayoutDefinition(flashCfgPath, parseResult.definitionLine)
-		console.log(
-			`Flash layout parsed successfully. Opened ${path.basename(flashCfgPath)} at Flash_Layout definition (line ${parseResult.definitionLine}).`,
-		)
+		// 4. 获取app固件名
+		let appImageName: string
+		try {
+			appImageName = await getAppImageName(sdkRoot, icSelection)
+			console.log(`Successfully parsed app image name: ${appImageName}`)
+		} catch (error) {
+			const userMessage = error instanceof Error ? error.message : String(error)
+			HostProvider.window.showMessage({ type: ShowMessageType.ERROR, message: userMessage })
+			return Empty.create({})
+		}
 
-		// 执行烧录命令
+		// 5. 烧录目录和命令组合
 		const flashProjectDirName = `${icSelection}_gcc_project`
 		const flashDir = path.join(sdkRoot, flashProjectDirName)
 
-		// 构建烧录命令
+		// 6. 获取烧录的固件和offset
 		const imageTypeToFileName = new Map<string, string>([
 			["IMG_BOOT", "km4_boot_all.bin"],
-			["IMG_APP_OTA1", "km0_km4_app.bin"],
+			["IMG_APP_OTA1", appImageName],
 		])
 
 		const commandParts: string[] = ["python", "flash.py", "--port", serialPort]
 
 		for (const currentRegion of parseResult.layout) {
-			let imageFileName = imageTypeToFileName.get(currentRegion.type)
-
-			if (currentRegion.type === "IMG_APP_OTA1" && imageFileName) {
-				const defaultAppPath = path.join(flashDir, imageFileName)
-
-				// 檢查預設檔案是否存在
-				if (!(await fileExists(defaultAppPath))) {
-					console.log(`Default app image '${imageFileName}' not found. Searching for alternatives...`)
-
-					const alternative1 = "km0_km4_ca32_app.bin"
-					const alternative2 = "kr4_km4_app.bin"
-
-					// 檢查第一個備選方案
-					if (await fileExists(path.join(flashDir, alternative1))) {
-						console.log(`Found alternative: '${alternative1}'`)
-						imageFileName = alternative1
-					}
-					// 檢查第二個備選方案
-					else if (await fileExists(path.join(flashDir, alternative2))) {
-						console.log(`Found alternative: '${alternative2}'`)
-						imageFileName = alternative2
-					} else {
-						console.log(`No alternative app images found. Using default '${imageFileName}' for the command.`)
-					}
-				}
-			}
+			const imageFileName = imageTypeToFileName.get(currentRegion.type)
 
 			if (imageFileName) {
+				const imagePath = path.join(flashDir, imageFileName)
+				if (!(await fileExists(imagePath))) {
+					HostProvider.window.showMessage({
+						type: ShowMessageType.ERROR,
+						message: `Flash image not found: ${imagePath}. Please build the project first.`,
+					})
+					return Empty.create({})
+				}
+
 				try {
 					const endAddrNum = parseInt(currentRegion.endAddr, 16)
 					const commandEndAddr = `0x${(endAddrNum + 1).toString(16).toUpperCase()}`
@@ -329,8 +337,8 @@ export async function amebaFlash(controller: Controller, _request: EmptyRequest)
 			return Empty.create({})
 		}
 
+		// 6. 执行烧录命令
 		const flashCommand = commandParts.join(" ")
-
 		const terminalManager = controller.amebaTerminalManager
 		const terminalInfo = await terminalManager.getOrCreateAmebaTerminal(sdkRoot)
 		if (!terminalInfo) {

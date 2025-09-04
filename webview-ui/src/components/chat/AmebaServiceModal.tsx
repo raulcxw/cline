@@ -60,6 +60,13 @@ const ControlsRow = styled.div`
 	font-size: 12px;
 	color: var(--vscode-descriptionForeground);
 `
+
+const ButtonGroup = styled.div`
+	display: flex;
+	align-items: center;
+	gap: 4px; /* 您可以在這裡調整按鈕之間的間距，例如 4px */
+`
+
 // --- Styled Components End ---
 const calculateTextWidth = (text: string | null | undefined, font: string): string => {
 	const baseMinWidth = 45
@@ -295,43 +302,53 @@ const AmebaServiceModal: React.FC = () => {
 				</StyledLinkDropdown>
 			</Tooltip>
 
-			<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Menuconfig" : disabledTooltipText}>
-				<VSCodeButton
-					appearance="icon"
-					aria-label="Ameba Menuconfig"
-					disabled={!isAmebaSdkReady}
-					onClick={handleMenuConfigClick}>
-					<span className="codicon codicon-checklist" />
-				</VSCodeButton>
-			</Tooltip>
+			<ButtonGroup>
+				<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Menuconfig" : disabledTooltipText}>
+					<VSCodeButton
+						appearance="icon"
+						aria-label="Ameba Menuconfig"
+						disabled={!isAmebaSdkReady}
+						onClick={handleMenuConfigClick}>
+						<span className="codicon codicon-checklist" />
+					</VSCodeButton>
+				</Tooltip>
 
-			<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Build" : disabledTooltipText}>
-				<VSCodeButton appearance="icon" aria-label="Ameba Build" disabled={!isAmebaSdkReady} onClick={handleBuildClick}>
-					<span className="codicon codicon-tools" />
-				</VSCodeButton>
-			</Tooltip>
+				<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Build" : disabledTooltipText}>
+					<VSCodeButton
+						appearance="icon"
+						aria-label="Ameba Build"
+						disabled={!isAmebaSdkReady}
+						onClick={handleBuildClick}>
+						<span className="codicon codicon-tools" />
+					</VSCodeButton>
+				</Tooltip>
 
-			<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Flash" : disabledTooltipText}>
-				<VSCodeButton appearance="icon" aria-label="Ameba Flash" disabled={!isAmebaSdkReady} onClick={handleFlashClick}>
-					<span className="codicon codicon-symbol-event" />
-				</VSCodeButton>
-			</Tooltip>
+				<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Flash" : disabledTooltipText}>
+					<VSCodeButton
+						appearance="icon"
+						aria-label="Ameba Flash"
+						disabled={!isAmebaSdkReady}
+						onClick={handleFlashClick}>
+						<span className="codicon codicon-symbol-event" />
+					</VSCodeButton>
+				</Tooltip>
 
-			<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Monitor" : disabledTooltipText}>
-				<VSCodeButton
-					appearance="icon"
-					aria-label="Ameba Monitor"
-					disabled={!isAmebaSdkReady}
-					onClick={handleMonitorClick}>
-					<span className="codicon codicon-vm" />
-				</VSCodeButton>
-			</Tooltip>
+				<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Monitor" : disabledTooltipText}>
+					<VSCodeButton
+						appearance="icon"
+						aria-label="Ameba Monitor"
+						disabled={!isAmebaSdkReady}
+						onClick={handleMonitorClick}>
+						<span className="codicon codicon-vm" />
+					</VSCodeButton>
+				</Tooltip>
 
-			<Tooltip tipText="Ameba Documents">
-				<VSCodeButton appearance="icon" aria-label="Ameba Doc" onClick={handleOpenDocsClick}>
-					<span className="codicon codicon-book" />
-				</VSCodeButton>
-			</Tooltip>
+				<Tooltip tipText="Ameba Documents">
+					<VSCodeButton appearance="icon" aria-label="Ameba Doc" onClick={handleOpenDocsClick}>
+						<span className="codicon codicon-book" />
+					</VSCodeButton>
+				</Tooltip>
+			</ButtonGroup>
 		</ControlsRow>
 	)
 }
