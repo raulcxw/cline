@@ -333,7 +333,7 @@ export class TerminalManager {
 
 		// 命令2: 执行初始化脚本 (跨平台兼容)
 		const isWindows = process.platform === "win32"
-		const scriptName = isWindows ? "ameba.bat" : "./ameba.sh"
+		const scriptName = isWindows ? "ameba.bat" : "source ./ameba.sh"
 		terminal.sendText(scriptName, true)
 		console.log(`[AmebaTerminal] Sent: ${scriptName}`)
 
