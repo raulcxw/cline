@@ -210,6 +210,16 @@
 				"command": "cline-ameba.openWalkthrough",
 				"title": "Open Walkthrough",
 				"category": "Cline"
+			},
+			{
+				"command": "cline-ameba.manageRemoteServers",
+				"title": "Ameba: Manage Remote Servers",
+				"category": "Ameba"
+			},
+			{
+				"command": "cline-ameba.showWelcomePage",
+				"title": "Ameba: Show Welcome Page",
+				"category": "Ameba"
 			}
 		],
 		"keybindings": [
