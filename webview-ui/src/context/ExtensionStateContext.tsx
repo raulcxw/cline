@@ -211,6 +211,7 @@ export const ExtensionStateContextProvider: React.FC<{
 		amebaIcVariants: [], // 这是修复错误的关键，初始化为一个空数组
 		amebaSerialPorts: [],
 		amebaSelectedSerialPort: undefined,
+		amebaRemoteServers: [],
 		/* realtek ameba add end*/
 	})
 	const [didHydrateState, setDidHydrateState] = useState(false)

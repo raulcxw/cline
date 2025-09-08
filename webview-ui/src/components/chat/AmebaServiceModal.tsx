@@ -103,10 +103,14 @@ const AmebaServiceModal: React.FC = () => {
 	} = useExtensionState()
 
 	const [isIcDropdownOpen, setIsIcDropdownOpen] = useState(false)
+	// --- [新增] 用於追蹤 Port 下拉選單開關狀態 ---
+	const [isPortDropdownOpen, setIsPortDropdownOpen] = useState(false)
+
 	const isAmebaSdkReady = !!(amebaSdkRoot && amebaToolChainEnv)
 
 	const FONT_STYLE = "12px var(--vscode-font-family, sans-serif)"
 
+	// --- IC Dropdown Width Calculation ---
 	const longestIcWidth = useMemo(() => {
 		if (!amebaIcVariants || amebaIcVariants.length === 0) {
 			return "75px"
@@ -121,16 +125,41 @@ const AmebaServiceModal: React.FC = () => {
 
 	const icDropdownWidth = isIcDropdownOpen ? longestIcWidth : selectedIcWidth
 
-	// --- [修改] 事件處理函式名稱，使其更語意化 ---
+	// --- [新增] Port Dropdown Width Calculation ---
+	const longestPortWidth = useMemo(() => {
+		if (!amebaSerialPorts || amebaSerialPorts.length === 0) {
+			return calculateTextWidth("No port found", FONT_STYLE)
+		}
+		const longestPort = amebaSerialPorts.reduce((a, b) => (a.path.length > b.path.length ? a : b))
+		return calculateTextWidth(longestPort.path, FONT_STYLE)
+	}, [amebaSerialPorts])
+
+	const selectedPortWidth = useMemo(() => {
+		const text = amebaSelectedSerialPort || (amebaSerialPorts.length === 0 ? "No port found" : "")
+		return calculateTextWidth(text, FONT_STYLE)
+	}, [amebaSelectedSerialPort, amebaSerialPorts])
+
+	const portDropdownWidth = isPortDropdownOpen ? longestPortWidth : selectedPortWidth
+	// --- [新增結束] ---
+
+	// --- IC Dropdown Event Handlers ---
 	const handleIcDropdownToggle = () => {
-		// 使用函數式更新，根據當前狀態進行切換
 		setIsIcDropdownOpen((current) => !current)
 	}
 
 	const handleIcDropdownClose = () => {
-		// 這個函式仍然需要，用於「強制關閉」的場景（如 onBlur 或選擇選項）
 		setIsIcDropdownOpen(false)
 	}
+
+	// --- [新增] Port Dropdown Event Handlers ---
+	const handlePortDropdownToggle = () => {
+		setIsPortDropdownOpen((current) => !current)
+	}
+
+	const handlePortDropdownClose = () => {
+		setIsPortDropdownOpen(false)
+	}
+	// --- [新增結束] ---
 
 	// --- Event Handlers (部分修改) ---
 	const handleMenuConfigClick = async () => {
@@ -175,7 +204,6 @@ const AmebaServiceModal: React.FC = () => {
 	}
 
 	const handleIcSelectionChange = async (e: any) => {
-		//handleIcDropdownClose()
 		const newIc = e.target.value
 		if (newIc && newIc !== amebaIcSelection) {
 			try {
@@ -232,9 +260,9 @@ const AmebaServiceModal: React.FC = () => {
 	const chipTooltipStyle: React.CSSProperties = {
 		left: "0px",
 		zIndex: 1001,
-		minWidth: "180px", // 設定一個足夠的最小寬度，您可以根據需要微調
-		whiteSpace: "pre-wrap", // 關鍵屬性：保留換行符並防止不必要的自動換行
-		textAlign: "left", // 確保文字靠左對齊
+		minWidth: "180px",
+		whiteSpace: "pre-wrap",
+		textAlign: "left",
 	}
 
 	const dropdownTooltipStyle: React.CSSProperties = {
@@ -263,7 +291,6 @@ const AmebaServiceModal: React.FC = () => {
 			<Tooltip
 				style={isAmebaSdkReady ? dropdownTooltipStyle : chipTooltipStyle}
 				tipText={isAmebaSdkReady ? "Select Chip" : disabledTooltipText}>
-				{/* --- [核心修改] 將 onFocus 改為 onMouseDown --- */}
 				<StyledLinkDropdown
 					disabled={!isAmebaSdkReady}
 					onBlur={handleIcDropdownClose}
@@ -282,19 +309,22 @@ const AmebaServiceModal: React.FC = () => {
 			<Tooltip
 				style={isAmebaSdkReady ? dropdownTooltipStyle : chipTooltipStyle}
 				tipText={isAmebaSdkReady ? "Select Serial Port" : disabledTooltipText}>
+				{/* --- [修改] 將 Port Dropdown 套用動態寬度與事件處理 --- */}
 				<StyledLinkDropdown
 					disabled={!isAmebaSdkReady}
 					key={portDropdownKey}
-					onChange={amebaSerialPorts.length > 0 ? handlePortSelectionChange : undefined}
-					style={{ minWidth: "45px" }}
+					onBlur={handlePortDropdownClose}
+					onChange={handlePortSelectionChange}
+					onMouseDown={handlePortDropdownToggle}
+					style={{ minWidth: portDropdownWidth }}
 					value={amebaSelectedSerialPort || ""}>
 					{amebaSerialPorts.length === 0 ? (
-						<StyledOption disabled value="no-port-placeholder">
+						<StyledOption disabled onClick={handlePortDropdownClose} value="no-port-placeholder">
 							No port found
 						</StyledOption>
 					) : (
 						amebaSerialPorts.map((port) => (
-							<StyledOption key={port.path} value={port.path}>
+							<StyledOption key={port.path} onClick={handlePortDropdownClose} value={port.path}>
 								{port.path}
 							</StyledOption>
 						))

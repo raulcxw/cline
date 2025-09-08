@@ -1,6 +1,8 @@
 // type that represents json data that is sent from extension to webview, called ExtensionMessage and has 'type' enum which can be 'plusButtonClicked' or 'settingsButtonClicked' or 'hello'
 
 import { AutoApprovalSettings } from "./AutoApprovalSettings"
+/* realtek ameba add start*/
+import { AmebaRemoteServer, SimplePortInfo } from "./amebaInfo"
 import { ApiConfiguration } from "./api"
 import { BrowserSettings } from "./BrowserSettings"
 import { ClineRulesToggles } from "./cline-rules"
@@ -10,11 +12,6 @@ import { McpDisplayMode } from "./McpDisplayMode"
 import { Mode, OpenaiReasoningEffort } from "./storage/types"
 import { TelemetrySetting } from "./TelemetrySetting"
 import { UserInfo } from "./UserInfo"
-
-/* realtek ameba add start*/
-export interface SimplePortInfo {
-	path: string // [核心修改] 將 'path' 改為 'port'，以匹配 serialport-lite 的輸出
-}
 /* realtek ameba add end*/
 
 // webview will hold state
@@ -85,6 +82,7 @@ export interface ExtensionState {
 	amebaIcVariants: string[] // 所有支持的 IC 型号列表，用于前端下拉菜单
 	amebaSerialPorts: SimplePortInfo[]
 	amebaSelectedSerialPort?: string
+	amebaRemoteServers: AmebaRemoteServer[]
 	/* realtek ameba add end*/
 }
 

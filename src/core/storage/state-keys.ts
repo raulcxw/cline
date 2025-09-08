@@ -2,10 +2,10 @@ import { ApiProvider, BedrockModelId, ModelInfo } from "@shared/api"
 import { FocusChainSettings } from "@shared/FocusChainSettings"
 import { LanguageModelChatSelector } from "vscode"
 import { AutoApprovalSettings } from "@/shared/AutoApprovalSettings"
+/* realtek ameba add start*/
+import { AmebaRemoteServer, SimplePortInfo } from "@/shared/amebaInfo"
 import { BrowserSettings } from "@/shared/BrowserSettings"
 import { ClineRulesToggles } from "@/shared/cline-rules"
-/* realtek ameba add start*/
-import { SimplePortInfo } from "@/shared/ExtensionMessage"
 import { HistoryItem } from "@/shared/HistoryItem"
 import { McpDisplayMode } from "@/shared/McpDisplayMode"
 import { McpMarketplaceCatalog } from "@/shared/mcp"
@@ -185,6 +185,7 @@ export type GlobalStateKey =
 	| "amebaIcVariants"
 	| "amebaSerialPorts"
 	| "amebaSelectedSerialPort"
+	| "amebaRemoteServers"
 /* realtek ameba add end*/
 
 export type LocalStateKey = "localClineRulesToggles" | "localCursorRulesToggles" | "localWindsurfRulesToggles" | "workflowToggles"
@@ -324,6 +325,7 @@ export interface GlobalState {
 	amebaIcVariants: string[] | undefined
 	amebaSerialPorts: SimplePortInfo[] | undefined
 	amebaSelectedSerialPort: string | undefined
+	amebaRemoteServers: AmebaRemoteServer[] | undefined
 	/* realtek ameba add end*/
 }
 

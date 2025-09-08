@@ -10,6 +10,7 @@ import { ChatContent } from "@shared/ChatContent"
 import { ExtensionState, Platform } from "@shared/ExtensionMessage"
 import { HistoryItem } from "@shared/HistoryItem"
 import { McpMarketplaceCatalog } from "@shared/mcp"
+import { ShowMessageType } from "@shared/proto/host/window"
 import { Mode } from "@shared/storage/types"
 import { TelemetrySetting } from "@shared/TelemetrySetting"
 import { UserInfo } from "@shared/UserInfo"
@@ -24,34 +25,28 @@ import * as os from "os"
 import pWaitFor from "p-wait-for"
 import * as path from "path"
 import * as tar from "tar"
-import { promisify } from "util"
 import * as vscode from "vscode"
 import { clineEnvConfig } from "@/config"
 import { HostProvider } from "@/hosts/host-provider"
 import { AuthService } from "@/services/auth/AuthService"
 import { PostHogClientProvider, telemetryService } from "@/services/posthog/PostHogClientProvider"
-import type { SimplePortInfo } from "@/shared/ExtensionMessage"
-import { ShowMessageType } from "@/shared/proto/host/window"
+import { AmebaRemoteServer } from "@/shared/amebaInfo"
 import { getLatestAnnouncementId } from "@/utils/announcements"
 import { getCwd, getDesktopDir } from "@/utils/path"
 import { CacheService, PersistenceErrorEvent } from "../storage/CacheService"
 import { ensureMcpServersDirectoryExists, ensureSettingsDirectoryExists, GlobalFileNames } from "../storage/disk"
 import { Task } from "../task"
-import { type PortInfo, SerialPortManager } from "./ameba/amebaSerialPortManager"
+import { AmebaSerialPort, type PortInfo } from "./ameba/amebaSerialPort"
 import { sendMcpMarketplaceCatalogEvent } from "./mcp/subscribeToMcpMarketplaceCatalog"
 import { sendStateUpdate } from "./state/subscribeToState"
 
-// [修改] 移除硬編碼的 IC 列表
-// const AMEBA_IC_VARIANTS = ["amebadplus", "amebalite", "amebasmart"]
+// [修改] 引入不含 id 的 ServerConfig
+//import { ServerConfig as AmebaRemoteServerConfig } from "./ameba/amebaRemoteSerialPort"
+
+// 移除硬编码的IC列表，改为动态获取
 const AMEBA_SDK_MARKERS = ["Realtek_Disclaimer-2019.pdf", "ameba.bat", "ameba.sh"]
 const IGNORED_DIRS = new Set([".git", ".venv", "build"])
 /* realtek ameba add end*/
-
-/*
-https://github.com/microsoft/vscode-webview-ui-toolkit-samples/blob/main/default/weather-webview/src/providers/WeatherViewProvider.ts
-
-https://github.com/KumarVariable/vscode-extension-sidebar-html/blob/master/src/customSidebarViewProvider.ts
-*/
 
 export class Controller {
 	readonly id: string
@@ -65,11 +60,12 @@ export class Controller {
 
 	/* realtek ameba add start*/
 	public readonly amebaTerminalManager: TerminalManager
-	private serialPortManager: SerialPortManager | undefined
+	private serialPortManager: AmebaSerialPort | undefined
 	private prebuiltsReminderTimer: NodeJS.Timeout | undefined
 	private isPrebuiltsReminderActive: boolean = false
 	private venvReminderTimer: NodeJS.Timeout | undefined
 	private isVenvReminderActive: boolean = false
+	private portRefreshInterval: NodeJS.Timeout | undefined
 	/* realtek ameba add end*/
 
 	constructor(
@@ -87,30 +83,35 @@ export class Controller {
 		this.amebaTerminalManager = new TerminalManager()
 		/* realtek ameba add end*/
 
-		// Initialize cache service asynchronously - critical for extension functionality
+		// 初始化缓存服务
 		this.cacheService
 			.initialize()
 			.then(() => {
 				this.authService.restoreRefreshTokenAndRetrieveAuthInfo()
 
 				/* realtek ameba add start*/
-				// [修正] 將自動檢測邏輯移動到此處，確保 CacheService 已初始化
-				console.log("[Controller] CacheService initialized. Starting Ameba SDK auto-detection.")
+				console.log("[Controller] CacheService initialized.")
 
-				this.serialPortManager = new SerialPortManager(this.handleSerialPortsChange.bind(this))
+				// [修改] 初始化串口管理器
+				this.serialPortManager = new AmebaSerialPort(this.handleSerialPortsChange.bind(this))
+				// [修改] 立即將儲存的伺服器列表傳遞給管理器
+				this.serialPortManager.updateServerList(this.getAmebaRemoteServers())
 
-				// 1. 插件启动时，立即执行一次检测
+				// 1. 插件启动时检测SDK
 				this.autoDetectAndSetAmebaSdkRoot()
 
-				// 2. 监听工作区文件夹的变化，当用户打开新项目时再次执行检测
+				// 2. 监听工作区变化
 				this.disposables.push(vscode.workspace.onDidChangeWorkspaceFolders(() => this.autoDetectAndSetAmebaSdkRoot()))
+
+				// 3. 启动定期刷新机制
+				this.startPeriodicPortRefresh(3000)
 				/* realtek ameba add end*/
 			})
 			.catch((error) => {
-				console.error("CRITICAL: Failed to initialize CacheService - extension may not function properly:", error)
+				console.error("CRITICAL: Failed to initialize CacheService:", error)
 			})
 
-		// Set up persistence error recovery
+		// 缓存错误处理
 		this.cacheService.onPersistenceError = async ({ error }: PersistenceErrorEvent) => {
 			console.error("Cache persistence failed, recovering:", error)
 			try {
@@ -136,7 +137,7 @@ export class Controller {
 			telemetryService,
 		)
 
-		// Clean up legacy checkpoints
+		// 清理旧检查点
 		cleanupLegacyCheckpoints(this.context.globalStorageUri.fsPath).catch((error) => {
 			console.error("Failed to cleanup legacy checkpoints:", error)
 		})
@@ -146,11 +147,6 @@ export class Controller {
 		return this.cacheService.getGlobalStateKey("mode")
 	}
 
-	/*
-	VSCode extensions use the disposable pattern to clean up resources when the sidebar/editor tab is closed by the user or system. This applies to event listening, commands, interacting with the UI, etc.
-	- https://vscode-docs.readthedocs.io/en/stable/extensions/patterns-and-principles/
-	- https://github.com/microsoft/vscode-extension-samples/blob/main/webview-sample/src/extension.ts
-	*/
 	async dispose() {
 		await this.clearTask()
 		while (this.disposables.length) {
@@ -163,22 +159,23 @@ export class Controller {
 
 		/* realtek ameba add start*/
 		this.amebaTerminalManager.disposeAll && this.amebaTerminalManager.disposeAll()
-		this.serialPortManager?.dispose()
+		this.serialPortManager?.dispose() // 释放串口管理器资源
 		this.stopPrebuiltsReminder()
 		this.stopVenvReminder()
+		if (this.portRefreshInterval) {
+			clearInterval(this.portRefreshInterval)
+		}
 		/* realtek ameba add end*/
 
 		console.error("Controller disposed")
 	}
 
-	// Auth methods
+	// 认证相关方法
 	async handleSignOut() {
 		try {
-			// TODO: update to clineAccountId and then move clineApiKey to a clear function.
 			this.cacheService.setSecret("clineAccountId", undefined)
 			this.cacheService.setGlobalState("userInfo", undefined)
 
-			// Update API providers through cache service
 			const apiConfiguration = this.cacheService.getApiConfiguration()
 			const updatedConfig = {
 				...apiConfiguration,
@@ -205,7 +202,7 @@ export class Controller {
 	}
 
 	async initTask(task?: string, images?: string[], files?: string[], historyItem?: HistoryItem) {
-		await this.clearTask() // ensures that an existing task doesn't exist before starting a new one, although this shouldn't be possible since user must clear task before starting a new one
+		await this.clearTask()
 
 		const apiConfiguration = this.cacheService.getApiConfiguration()
 		const autoApprovalSettings = this.cacheService.getGlobalStateKey("autoApprovalSettings")
@@ -227,7 +224,6 @@ export class Controller {
 
 		const NEW_USER_TASK_COUNT_THRESHOLD = 10
 
-		// Check if the user has completed enough tasks to no longer be considered a "new user"
 		if (isNewUser && !historyItem && taskHistory && taskHistory.length >= NEW_USER_TASK_COUNT_THRESHOLD) {
 			this.cacheService.setGlobalState("isNewUser", false)
 			await this.postStateToWebview()
@@ -240,7 +236,7 @@ export class Controller {
 			}
 			this.cacheService.setGlobalState("autoApprovalSettings", updatedAutoApprovalSettings)
 		}
-		// Apply remote feature flag gate to focus chain settings
+
 		const effectiveFocusChainSettings = {
 			...(focusChainSettings || { enabled: true, remindClineInterval: 6 }),
 			enabled: Boolean(focusChainSettings?.enabled) && Boolean(focusChainFeatureFlagEnabled),
@@ -293,13 +289,10 @@ export class Controller {
 	async togglePlanActMode(modeToSwitchTo: Mode, chatContent?: ChatContent): Promise<boolean> {
 		const didSwitchToActMode = modeToSwitchTo === "act"
 
-		// Store mode to global state
 		this.cacheService.setGlobalState("mode", modeToSwitchTo)
 
-		// Capture mode switch telemetry | Capture regardless of if we know the taskId
 		telemetryService.captureModeSwitch(this.task?.ulid ?? "0", modeToSwitchTo)
 
-		// Update API handler with new mode (buildApiHandler now selects provider based on mode)
 		if (this.task) {
 			const apiConfiguration = this.cacheService.getApiConfiguration()
 			this.task.api = buildApiHandler({ ...apiConfiguration, ulid: this.task.ulid }, modeToSwitchTo)
@@ -311,14 +304,12 @@ export class Controller {
 			this.task.updateMode(modeToSwitchTo)
 			if (this.task.taskState.isAwaitingPlanResponse && didSwitchToActMode) {
 				this.task.taskState.didRespondToPlanAskBySwitchingMode = true
-				// Use chatContent if provided, otherwise use default message
 				await this.task.handleWebviewAskResponse(
 					"messageResponse",
 					chatContent?.message || "PLAN_MODE_TOGGLE_RESPONSE",
 					chatContent?.images || [],
 					chatContent?.files || [],
 				)
-
 				return true
 			} else {
 				this.cancelTask()
@@ -342,7 +333,7 @@ export class Controller {
 					this.task === undefined ||
 					this.task.taskState.isStreaming === false ||
 					this.task.taskState.didFinishAbortingStream ||
-					this.task.taskState.isWaitingForFirstChunk, // if only first chunk is processed, then there's no need to wait for graceful abort (closes edits, browser, etc)
+					this.task.taskState.isWaitingForFirstChunk,
 				{
 					timeout: 3_000,
 				},
@@ -350,12 +341,9 @@ export class Controller {
 				console.error("Failed to abort task")
 			})
 			if (this.task) {
-				// 'abandoned' will prevent this cline instance from affecting future cline instance gui. this may happen if its hanging on a streaming request
 				this.task.taskState.abandoned = true
 			}
-			await this.initTask(undefined, undefined, undefined, historyItem) // clears task again, so we need to abortTask manually above
-			// Dont send the state to the webview, the new Cline instance will send state when it's ready.
-			// Sending the state here sent an empty messages array to webview leading to virtuoso having to reload the entire list
+			await this.initTask(undefined, undefined, undefined, historyItem)
 		}
 	}
 
@@ -365,33 +353,24 @@ export class Controller {
 
 			const clineProvider: ApiProvider = "cline"
 
-			// Get current settings to determine how to update providers
 			const planActSeparateModelsSetting = this.cacheService.getGlobalStateKey("planActSeparateModelsSetting")
-
 			const currentMode = await this.getCurrentMode()
-
-			// Get current API configuration from cache
 			const currentApiConfiguration = this.cacheService.getApiConfiguration()
 
 			const updatedConfig = { ...currentApiConfiguration }
 
 			if (planActSeparateModelsSetting) {
-				// Only update the current mode's provider
 				if (currentMode === "plan") {
 					updatedConfig.planModeApiProvider = clineProvider
 				} else {
 					updatedConfig.actModeApiProvider = clineProvider
 				}
 			} else {
-				// Update both modes to keep them in sync
 				updatedConfig.planModeApiProvider = clineProvider
 				updatedConfig.actModeApiProvider = clineProvider
 			}
 
-			// Update the API configuration through cache service
 			this.cacheService.setApiConfiguration(updatedConfig)
-
-			// Mark welcome view as completed since user has successfully logged in
 			this.cacheService.setGlobalState("welcomeViewCompleted", true)
 
 			if (this.task) {
@@ -405,12 +384,10 @@ export class Controller {
 				type: ShowMessageType.ERROR,
 				message: "Failed to log in to Cline",
 			})
-			// Even on login failure, we preserve any existing tokens
-			// Only clear tokens on explicit logout
 		}
 	}
 
-	// MCP Marketplace
+	// MCP Marketplace相关
 	private async fetchMcpMarketplaceFromApi(silent: boolean = false): Promise<McpMarketplaceCatalog | undefined> {
 		try {
 			const response = await axios.get(`${clineEnvConfig.mcpBaseUrl}/marketplace`, {
@@ -432,7 +409,6 @@ export class Controller {
 				})),
 			}
 
-			// Store in global state
 			this.cacheService.setGlobalState("mcpMarketplaceCatalog", catalog)
 			return catalog
 		} catch (error) {
@@ -470,7 +446,6 @@ export class Controller {
 				})),
 			}
 
-			// Store in global state
 			this.cacheService.setGlobalState("mcpMarketplaceCatalog", catalog)
 			return catalog
 		} catch (error) {
@@ -494,11 +469,6 @@ export class Controller {
 		}
 	}
 
-	/**
-	 * RPC variant that silently refreshes the MCP marketplace catalog and returns the result
-	 * Unlike silentlyRefreshMcpMarketplace, this doesn't send a message to the webview
-	 * @returns MCP marketplace catalog or undefined if refresh failed
-	 */
 	async silentlyRefreshMcpMarketplaceRPC() {
 		try {
 			return await this.fetchMcpMarketplaceFromApiRPC(true)
@@ -508,8 +478,7 @@ export class Controller {
 		}
 	}
 
-	// OpenRouter
-
+	// OpenRouter相关
 	async handleOpenRouterCallback(code: string) {
 		let apiKey: string
 		try {
@@ -527,7 +496,6 @@ export class Controller {
 		const openrouter: ApiProvider = "openrouter"
 		const currentMode = await this.getCurrentMode()
 
-		// Update API configuration through cache service
 		const currentApiConfiguration = this.cacheService.getApiConfiguration()
 		const updatedConfig = {
 			...currentApiConfiguration,
@@ -541,7 +509,6 @@ export class Controller {
 		if (this.task) {
 			this.task.api = buildApiHandler({ ...updatedConfig, ulid: this.task.ulid }, currentMode)
 		}
-		// Dont send settingsButtonClicked because its bad ux if user is on welcome
 	}
 
 	private async ensureCacheDirectoryExists(): Promise<string> {
@@ -550,7 +517,7 @@ export class Controller {
 		return cacheDir
 	}
 
-	// Read OpenRouter models from disk cache
+	// 读取模型缓存
 	async readOpenRouterModels(): Promise<Record<string, ModelInfo> | undefined> {
 		const openRouterModelsFilePath = path.join(await this.ensureCacheDirectoryExists(), GlobalFileNames.openRouterModels)
 		const fileExists = await fileExistsAtPath(openRouterModelsFilePath)
@@ -561,7 +528,6 @@ export class Controller {
 		return undefined
 	}
 
-	// Read Vercel AI Gateway models from disk cache
 	async readVercelAiGatewayModels(): Promise<Record<string, ModelInfo> | undefined> {
 		const vercelAiGatewayModelsFilePath = path.join(
 			await this.ensureCacheDirectoryExists(),
@@ -575,8 +541,7 @@ export class Controller {
 		return undefined
 	}
 
-	// Task history
-
+	// 任务历史相关
 	async getTaskWithId(id: string): Promise<{
 		historyItem: HistoryItem
 		taskDirPath: string
@@ -608,8 +573,6 @@ export class Controller {
 				}
 			}
 		}
-		// if we tried to get a task that doesn't exist, remove it from state
-		// FIXME: this seems to happen sometimes when the json file doesn't save to disk for some reason
 		await this.deleteTaskFromState(id)
 		throw new Error("Task not found")
 	}
@@ -620,14 +583,10 @@ export class Controller {
 	}
 
 	async deleteTaskFromState(id: string) {
-		// Remove the task from history
 		const taskHistory = this.cacheService.getGlobalStateKey("taskHistory")
 		const updatedTaskHistory = taskHistory.filter((task) => task.id !== id)
 		this.cacheService.setGlobalState("taskHistory", updatedTaskHistory)
-
-		// Notify the webview that the task has been deleted
 		await this.postStateToWebview()
-
 		return updatedTaskHistory
 	}
 
@@ -637,7 +596,6 @@ export class Controller {
 	}
 
 	async getStateToPostToWebview(): Promise<ExtensionState> {
-		// Get API configuration from cache for immediate access
 		const apiConfiguration = this.cacheService.getApiConfiguration()
 		const lastShownAnnouncementId = this.cacheService.getGlobalStateKey("lastShownAnnouncementId")
 		const taskHistory = this.cacheService.getGlobalStateKey("taskHistory")
@@ -673,16 +631,17 @@ export class Controller {
 		const localCursorRulesToggles = this.cacheService.getWorkspaceStateKey("localCursorRulesToggles")
 		const workflowToggles = this.cacheService.getWorkspaceStateKey("workflowToggles")
 
-		/* realtek ameba add start*/
+		/* realtek ameba 相关状态 */
 		const amebaSdkRoot = this.cacheService.getGlobalStateKey("amebaSdkRoot")
 		const amebaSdkVersion = this.cacheService.getGlobalStateKey("amebaSdkVersion")
 		const amebaIcSelection = this.cacheService.getGlobalStateKey("amebaIcSelection")
 		const amebaSerialPorts = this.cacheService.getGlobalStateKey("amebaSerialPorts")
 		const amebaSelectedSerialPort = this.cacheService.getGlobalStateKey("amebaSelectedSerialPort")
 		const amebaToolChainEnv = this.cacheService.getGlobalStateKey("amebaToolChainEnv")
-		// [修改] 從快取讀取 IC 列表
 		const amebaIcVariants = this.cacheService.getGlobalStateKey("amebaIcVariants")
-		/* realtek ameba add end*/
+
+		// [修改] 获取多服务器配置
+		const amebaRemoteServers = this.getAmebaRemoteServers()
 
 		const currentTaskItem = this.task?.taskId ? (taskHistory || []).find((item) => item.id === this.task?.taskId) : undefined
 		const checkpointTrackerErrorMessage = this.task?.taskState.checkpointTrackerErrorMessage
@@ -691,7 +650,7 @@ export class Controller {
 		const processedTaskHistory = (taskHistory || [])
 			.filter((item) => item.ts && item.task)
 			.sort((a, b) => b.ts - a.ts)
-			.slice(0, 100) // for now we're only getting the latest 100 tasks, but a better solution here is to only pass in 3 for recent task history, and then get the full task history on demand when going to the task history view (maybe with pagination?)
+			.slice(0, 100)
 
 		const latestAnnouncementId = getLatestAnnouncementId(this.context)
 		const shouldShowAnnouncement = lastShownAnnouncementId !== latestAnnouncementId
@@ -737,20 +696,20 @@ export class Controller {
 			terminalReuseEnabled,
 			defaultTerminalProfile,
 			isNewUser,
-			welcomeViewCompleted: welcomeViewCompleted as boolean, // Can be undefined but is set to either true or false by the migration that runs on extension launch in extension.ts
+			welcomeViewCompleted: welcomeViewCompleted as boolean,
 			mcpResponsesCollapsed,
 			terminalOutputLineLimit,
 			customPrompt,
-			/* realtek ameba add start*/
+			/* realtek ameba add */
 			amebaSdkRoot: amebaSdkRoot as string | undefined,
 			amebaSdkVersion: amebaSdkVersion as string | undefined,
-			amebaIcSelection: amebaIcSelection as string | undefined, // [修改] 移除預設值，讓選擇邏輯更健壯
-			// [修改] 使用從快取讀取的動態列表
+			amebaIcSelection: amebaIcSelection as string | undefined,
 			amebaIcVariants: (amebaIcVariants as string[] | undefined) || [],
 			amebaSerialPorts: (amebaSerialPorts as PortInfo[] | undefined) || [],
 			amebaSelectedSerialPort: amebaSelectedSerialPort as string | undefined,
 			amebaToolChainEnv: amebaToolChainEnv as string | undefined,
-			/* realtek ameba add end*/
+			amebaRemoteServers: amebaRemoteServers,
+			/* realtek ameba end */
 		}
 	}
 
@@ -758,26 +717,8 @@ export class Controller {
 		if (this.task) {
 		}
 		await this.task?.abortTask()
-		this.task = undefined // removes reference to it, so once promises end it will be garbage collected
+		this.task = undefined
 	}
-
-	// Caching mechanism to keep track of webview messages + API conversation history per provider instance
-
-	/*
-	Now that we use retainContextWhenHidden, we don't have to store a cache of cline messages in the user's state, but we could to reduce memory footprint in long conversations.
-
-	- We have to be careful of what state is shared between ClineProvider instances since there could be multiple instances of the extension running at once. For example when we cached cline messages using the same key, two instances of the extension could end up using the same key and overwriting each other's messages.
-	- Some state does need to be shared between the instances, i.e. the API key--however there doesn't seem to be a good way to notify the other instances that the API key has changed.
-
-	We need to use a unique identifier for each ClineProvider instance's message cache since we could be running several instances of the extension outside of just the sidebar i.e. in editor panels.
-
-	// conversation history to send in API requests
-
-	/*
-	It seems that some API messages do not comply with vscode state requirements. Either the Anthropic library is manipulating these values somehow in the backend in a way that's creating cyclic references, or the API returns a function or a Symbol as part of the message content.
-	VSCode docs about state: "The value must be JSON-stringifyable ... value — A value. MUST not contain cyclic references."
-	For now we'll store the conversation history in memory, and if we need to store in state directly we'd need to do a manual conversion to ensure proper json stringification.
-	*/
 
 	async updateTaskHistory(item: HistoryItem): Promise<HistoryItem[]> {
 		const history = this.cacheService.getGlobalStateKey("taskHistory")
@@ -791,13 +732,12 @@ export class Controller {
 		return history
 	}
 
-	/* realtek ameba add start*/
+	/* realtek ameba 相关方法（仅保留串口列表功能） */
 	public async getAmebaSdkRoot(): Promise<string | undefined> {
 		return this.cacheService.getGlobalStateKey("amebaSdkRoot")
 	}
 
 	public async getAmebaIcSelection(): Promise<string | undefined> {
-		// [修改] 直接返回快取中的值，可能是 undefined
 		return this.cacheService.getGlobalStateKey("amebaIcSelection")
 	}
 
@@ -842,19 +782,18 @@ export class Controller {
 		}
 	}
 
-	// [新增] 儲存 IC 變體列表並更新當前選擇
+	// 存储IC变体列表并更新当前选择
 	private async setAmebaIcVariants(variants: string[]): Promise<void> {
 		this.cacheService.setGlobalState("amebaIcVariants", variants)
 		console.log(`[Controller] Ameba IC variants updated to: [${variants.join(", ")}]`)
 
-		// 檢查當前選擇的 IC 是否仍然有效
+		// 检查当前选择的IC是否有效
 		const currentSelection = await this.getAmebaIcSelection()
 		const isSelectionValid = currentSelection ? variants.includes(currentSelection) : false
 
-		// 如果當前選擇無效，或者從未選擇過，則設定一個新的預設值
+		// 如当前选择无效，设置新默认值
 		if (!isSelectionValid) {
 			const newSelection = variants.length > 0 ? variants[0] : undefined
-			// 只有當新舊選擇不同時才更新，避免不必要的重複設定
 			if (newSelection !== currentSelection) {
 				await this.setAmebaIcSelection(newSelection)
 			}
@@ -866,25 +805,25 @@ export class Controller {
 			const checks = AMEBA_SDK_MARKERS.map((markerFile) => fileExistsAtPath(path.join(dirPath, markerFile)))
 			const results = await Promise.all(checks)
 			return results.every(Boolean)
-		} catch (error) {
+		} catch (_error) {
 			return false
 		}
 	}
 
-	// [新增] 從 SDK 路徑動態獲取 IC 列表的函式
+	// 从SDK路径动态获取IC列表
 	private async getAmebaIcVariantsFromSdk(sdkRoot: string): Promise<string[]> {
 		try {
 			const entries = await fs.readdir(sdkRoot, { withFileTypes: true })
 			const variants = entries
 				.filter((entry) => entry.isDirectory() && entry.name.endsWith("_gcc_project"))
 				.map((entry) => entry.name.replace("_gcc_project", ""))
-				.sort() // 排序以保證順序一致性
+				.sort()
 
 			console.log(`[Ameba SDK] Found IC variants: [${variants.join(", ")}]`)
 			return variants
 		} catch (error) {
 			console.error(`[Ameba SDK] Failed to read IC variants from ${sdkRoot}:`, error)
-			return [] // 發生錯誤時返回空陣列
+			return []
 		}
 	}
 
@@ -939,8 +878,8 @@ export class Controller {
 						queue.push(path.join(currentDir, entry.name))
 					}
 				}
-			} catch (error) {
-				// Ignore errors
+			} catch (_error) {
+				// 忽略错误
 			}
 		}
 
@@ -958,7 +897,6 @@ export class Controller {
 			console.log("[Ameba SDK] No workspace folder open. Skipping auto-detection.")
 			await this.setAmebaSdkRoot(undefined)
 			await this.setAmebaToolChainEnv(undefined)
-			// [修改] 當沒有工作區時，清空 IC 列表
 			await this.setAmebaIcVariants([])
 			await this.setAmebaSdkVersion(undefined)
 			await this.postStateToWebview()
@@ -1095,6 +1033,7 @@ export class Controller {
 				if (prebuiltsUrl) {
 					//urls.push(prebuiltsUrl)
 				}
+
 				if (prebuiltsUrlAliyun) {
 					urls.push(prebuiltsUrlAliyun)
 				}
@@ -1310,7 +1249,7 @@ export class Controller {
 			try {
 				await this.executeCommandInOutputChannel(`${pythonExecutablePath} --version`, channel)
 				channel.appendLine(`[Info] System command '${pythonExecutablePath}' is available.`)
-			} catch (error) {
+			} catch (_error) {
 				channel.appendLine(`[Error] System command '${pythonExecutablePath}' not found or failed to execute.`)
 				channel.appendLine(
 					`[Info] Please make sure Python 3 is installed and '${pythonExecutablePath}' is in your system's PATH.`,
@@ -1324,7 +1263,9 @@ export class Controller {
 			return
 		}
 
-		if (token.isCancellationRequested) return
+		if (token.isCancellationRequested) {
+			return
+		}
 
 		progress.report({ increment: 15, message: "Cleaning up old environment..." })
 		channel.appendLine(`\n[Step 1/3] Removing existing .venv directory at ${venvPath}...`)
@@ -1333,7 +1274,9 @@ export class Controller {
 		}
 		channel.appendLine("Cleanup complete.")
 
-		if (token.isCancellationRequested) return
+		if (token.isCancellationRequested) {
+			return
+		}
 
 		progress.report({ increment: 25, message: "Creating Python virtual environment..." })
 		channel.appendLine("\n[Step 2/3] Creating new Python virtual environment...")
@@ -1341,7 +1284,9 @@ export class Controller {
 		const createVenvCommand = `"${pythonExecutablePath}" -m ${venvModuleName} "${venvPath}"`
 		await this.executeCommandInOutputChannel(createVenvCommand, channel)
 
-		if (token.isCancellationRequested) return
+		if (token.isCancellationRequested) {
+			return
+		}
 
 		progress.report({ increment: 20, message: "Installing dependencies..." })
 		channel.appendLine("\n[Step 3/3] Installing dependencies from requirements.txt...")
@@ -1466,6 +1411,119 @@ export class Controller {
 		}
 	}
 
+	/* --- [修改] 遠端伺服器管理 --- */
+	private getAmebaRemoteServers(): AmebaRemoteServer[] {
+		return this.cacheService.getGlobalStateKey("amebaRemoteServers") || []
+	}
+
+	private async saveAmebaRemoteServers(servers: AmebaRemoteServer[]): Promise<void> {
+		this.cacheService.setGlobalState("amebaRemoteServers", servers)
+		this.serialPortManager?.updateServerList(servers)
+		await this.postStateToWebview()
+	}
+
+	public async amebaManageRemoteServers(): Promise<void> {
+		const servers = this.getAmebaRemoteServers()
+
+		const items: (vscode.QuickPickItem & { host?: string; action?: "add" | "delete" })[] = [
+			{ label: "$(add) Add New Remote Server", description: "Configure a new server connection", action: "add" },
+			...servers.map((s) => ({
+				label: `$(server) ${s.name}`,
+				description: `${s.host}:${s.port}`,
+				detail: "Select to delete this server.",
+				host: s.host,
+				// highlight-start
+				// 使用 as const 來告訴 TypeScript 這是字面量型別 "delete"
+				action: "delete" as const,
+				// highlight-end
+			})),
+		]
+
+		const selection = await vscode.window.showQuickPick(items, {
+			placeHolder: "Select a server to delete, or add a new one",
+		})
+
+		if (!selection) {
+			return
+		}
+
+		if (selection.action === "add") {
+			await this.promptForNewServer()
+		} else if (selection.action === "delete" && selection.host) {
+			const serverToDelete = servers.find((s) => s.host === selection.host)
+			if (serverToDelete) {
+				const confirmResponse = await HostProvider.window.showMessage({
+					type: ShowMessageType.WARNING,
+					message: `Are you sure you want to delete the remote server "${serverToDelete.name}" (${serverToDelete.host})?`,
+					options: {
+						modal: true,
+						items: ["Delete"],
+					},
+				})
+
+				if (confirmResponse.selectedOption === "Delete") {
+					const updatedServers = servers.filter((s) => s.host !== selection.host)
+					await this.saveAmebaRemoteServers(updatedServers)
+					HostProvider.window.showMessage({
+						type: ShowMessageType.INFORMATION,
+						message: `Remote server "${serverToDelete.name}" deleted.`,
+					})
+				}
+			}
+		}
+	}
+
+	private async promptForNewServer(): Promise<void> {
+		const currentServers = this.getAmebaRemoteServers()
+
+		const nameResult = await HostProvider.window.showInputBox({
+			title: "Server Name",
+			prompt: "Enter a name for the new remote server",
+		})
+
+		// 正確的檢查方式：檢查物件內的 response 屬性是否為空
+		const name = nameResult.response?.trim()
+		if (!name) {
+			return // 如果使用者取消或輸入為空，則退出
+		}
+
+		const hostResult = await HostProvider.window.showInputBox({
+			title: "Server IP",
+			prompt: "Enter the server's IP address or hostname",
+		})
+
+		const host = hostResult.response?.trim()
+		if (!host) {
+			return
+		}
+
+		const portResult = await HostProvider.window.showInputBox({
+			title: "Server Port",
+			prompt: "Enter the server's port number",
+			value: "58916",
+		})
+
+		const portStr = portResult.response?.trim()
+		if (!portStr) {
+			return
+		}
+
+		const port = Number(portStr)
+		if (Number.isNaN(port) || port <= 0 || port >= 65536) {
+			HostProvider.window.showMessage({
+				type: ShowMessageType.ERROR,
+				message: "Please enter a valid port number (1-65535).",
+			})
+			return
+		}
+
+		const newServer: AmebaRemoteServer = { name, host, port }
+		await this.saveAmebaRemoteServers([...currentServers, newServer])
+		HostProvider.window.showMessage({ type: ShowMessageType.INFORMATION, message: `Remote server "${name}" added.` })
+	}
+	/* --- [修改結束] --- */
+
+	/* 串口列表相关方法 */
 	public async forceRefreshSerialPorts(): Promise<void> {
 		if (this.serialPortManager) {
 			await this.serialPortManager.forceCheckForPortChanges()
@@ -1473,25 +1531,37 @@ export class Controller {
 	}
 
 	private async handleSerialPortsChange(ports: PortInfo[], isFirst: boolean): Promise<void> {
-		console.log("[Controller] Handling serial port changes...", { isFirst, portCount: ports.length })
+		console.log(`[Controller] Handling serial port changes. Total: ${ports.length}. Is first: ${isFirst}.`)
 
 		this.cacheService.setGlobalState("amebaSerialPorts", ports)
 
 		const currentSelection = this.cacheService.getGlobalStateKey("amebaSelectedSerialPort")
-
 		const isCurrentSelectionValid = currentSelection ? ports.some((p) => p.path === currentSelection) : false
 
 		if (!isCurrentSelectionValid) {
 			const newSelection = ports.length > 0 ? ports[0].path : undefined
-
 			if (newSelection !== currentSelection) {
 				await this.setSelectedAmebaSerialPort(newSelection)
 			} else {
+				// 即使選擇沒變，也可能需要更新 UI（例如列表為空）
 				await this.postStateToWebview()
 			}
 		} else {
 			await this.postStateToWebview()
 		}
+	}
+
+	private startPeriodicPortRefresh(intervalMs: number = 3000): void {
+		if (this.portRefreshInterval) {
+			clearInterval(this.portRefreshInterval)
+		}
+
+		this.portRefreshInterval = setInterval(() => {
+			console.log("[Controller] Periodically refreshing serial ports...")
+			this.forceRefreshSerialPorts().catch((err) => console.error("[Controller] Failed to refresh ports:", err))
+		}, intervalMs)
+
+		console.log(`[Controller] Started periodic port refresh every ${intervalMs / 1000} seconds`)
 	}
 
 	public async setSelectedAmebaSerialPort(portPath: string | undefined): Promise<void> {
