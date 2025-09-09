@@ -213,12 +213,12 @@
 			},
 			{
 				"command": "cline-ameba.manageRemoteServers",
-				"title": "Ameba: Manage Remote Servers",
+				"title": "Manage Remote Servers",
 				"category": "Ameba"
 			},
 			{
 				"command": "cline-ameba.showWelcomePage",
-				"title": "Ameba: Show Welcome Page",
+				"title": "Show Welcome Page",
 				"category": "Ameba"
 			}
 		],
