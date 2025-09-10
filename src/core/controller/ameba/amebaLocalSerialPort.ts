@@ -1,9 +1,6 @@
 import os from "node:os"
 import { execa } from "execa"
-
-export type LocalPortInfo = {
-	path: string
-}
+import { LocalPortInfo } from "@/shared/amebaInfo"
 
 export type PortChangeCallback = (ports: LocalPortInfo[], isFirst: boolean) => void
 

@@ -1,13 +1,7 @@
 import * as net from "node:net"
-import { AmebaRemoteServer } from "@/shared/amebaInfo"
+import { AmebaRemoteServer, RemotePortInfo } from "@/shared/amebaInfo"
 
 export type ServerConfigs = AmebaRemoteServer[]
-
-export type RemotePortInfo = {
-	path: string
-	host: string // [修改] 使用 host 作為唯一標識
-	serverName: string
-}
 
 export type TcpMessage = { type: "com_ports_update"; ports: string[] } | { type: "list_com_ports" }
 

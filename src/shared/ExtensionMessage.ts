@@ -2,7 +2,7 @@
 
 import { AutoApprovalSettings } from "./AutoApprovalSettings"
 /* realtek ameba add start*/
-import { AmebaRemoteServer, SimplePortInfo } from "./amebaInfo"
+import { AmebaPortInfo, AmebaRemoteServer } from "./amebaInfo"
 import { ApiConfiguration } from "./api"
 import { BrowserSettings } from "./BrowserSettings"
 import { ClineRulesToggles } from "./cline-rules"
@@ -80,7 +80,7 @@ export interface ExtensionState {
 	amebaToolChainEnv?: string // Ameba Toolchain 目录路径
 	amebaIcSelection?: string // 当前选择的 IC 型号 (例如 "amebadplus")
 	amebaIcVariants: string[] // 所有支持的 IC 型号列表，用于前端下拉菜单
-	amebaSerialPorts: SimplePortInfo[]
+	amebaSerialPorts: AmebaPortInfo[]
 	amebaSelectedSerialPort?: string
 	amebaRemoteServers: AmebaRemoteServer[]
 	/* realtek ameba add end*/

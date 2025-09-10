@@ -13,6 +13,18 @@ export interface AmebaRemoteServer {
 	port: number
 }
 
-export interface SimplePortInfo {
-	path: string // [核心修改] 將 'path' 改為 'port'，以匹配 serialport-lite 的輸出
+export type LocalPortInfo = {
+	path: string
+}
+
+export type RemotePortInfo = {
+	path: string
+	host: string // [修改] 使用 host 作為唯一標識
+	serverName: string
+}
+
+export type AmebaPortInfo = (LocalPortInfo | RemotePortInfo) & {
+	isRemote: boolean
+	serverName: string
+	host: string
 }

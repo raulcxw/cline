@@ -30,13 +30,13 @@ import { clineEnvConfig } from "@/config"
 import { HostProvider } from "@/hosts/host-provider"
 import { AuthService } from "@/services/auth/AuthService"
 import { PostHogClientProvider, telemetryService } from "@/services/posthog/PostHogClientProvider"
-import { AmebaRemoteServer } from "@/shared/amebaInfo"
+import { AmebaPortInfo, AmebaRemoteServer } from "@/shared/amebaInfo"
 import { getLatestAnnouncementId } from "@/utils/announcements"
 import { getCwd, getDesktopDir } from "@/utils/path"
 import { CacheService, PersistenceErrorEvent } from "../storage/CacheService"
 import { ensureMcpServersDirectoryExists, ensureSettingsDirectoryExists, GlobalFileNames } from "../storage/disk"
 import { Task } from "../task"
-import { AmebaSerialPort, type PortInfo } from "./ameba/amebaSerialPort"
+import { AmebaSerialPort } from "./ameba/amebaSerialPort"
 import { sendMcpMarketplaceCatalogEvent } from "./mcp/subscribeToMcpMarketplaceCatalog"
 import { sendStateUpdate } from "./state/subscribeToState"
 
@@ -705,7 +705,7 @@ export class Controller {
 			amebaSdkVersion: amebaSdkVersion as string | undefined,
 			amebaIcSelection: amebaIcSelection as string | undefined,
 			amebaIcVariants: (amebaIcVariants as string[] | undefined) || [],
-			amebaSerialPorts: (amebaSerialPorts as PortInfo[] | undefined) || [],
+			amebaSerialPorts: (amebaSerialPorts as AmebaPortInfo[] | undefined) || [],
 			amebaSelectedSerialPort: amebaSelectedSerialPort as string | undefined,
 			amebaToolChainEnv: amebaToolChainEnv as string | undefined,
 			amebaRemoteServers: amebaRemoteServers,
@@ -1530,7 +1530,7 @@ export class Controller {
 		}
 	}
 
-	private async handleSerialPortsChange(ports: PortInfo[], isFirst: boolean): Promise<void> {
+	private async handleSerialPortsChange(ports: AmebaPortInfo[], isFirst: boolean): Promise<void> {
 		console.log(`[Controller] Handling serial port changes. Total: ${ports.length}. Is first: ${isFirst}.`)
 
 		this.cacheService.setGlobalState("amebaSerialPorts", ports)
