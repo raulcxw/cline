@@ -81,7 +81,7 @@ export interface ExtensionState {
 	amebaIcSelection?: string // 当前选择的 IC 型号 (例如 "amebadplus")
 	amebaIcVariants: string[] // 所有支持的 IC 型号列表，用于前端下拉菜单
 	amebaSerialPorts: AmebaPortInfo[]
-	amebaSelectedSerialPort?: string
+	amebaSelectedSerialPort?: AmebaPortInfo
 	amebaRemoteServers: AmebaRemoteServer[]
 	/* realtek ameba add end*/
 }

@@ -324,7 +324,7 @@ export interface GlobalState {
 	amebaIcSelection: string | undefined
 	amebaIcVariants: string[] | undefined
 	amebaSerialPorts: AmebaPortInfo[] | undefined
-	amebaSelectedSerialPort: string | undefined
+	amebaSelectedSerialPort: AmebaPortInfo | undefined
 	amebaRemoteServers: AmebaRemoteServer[] | undefined
 	/* realtek ameba add end*/
 }

@@ -301,7 +301,15 @@ export async function amebaFlash(controller: Controller, _request: EmptyRequest)
 			["IMG_APP_OTA1", appImageName],
 		])
 
-		const commandParts: string[] = ["python", "flash.py", "--port", serialPort]
+		const effectivePort = serialPort.isRemote ? path.basename(serialPort.path) : serialPort.path
+
+		const commandParts: string[] = ["python", "flash.py", "--port", effectivePort]
+
+		if (serialPort.isRemote) {
+			const remoteHost = serialPort.host
+			const remotePort = 58916
+			commandParts.push("--remote-server", remoteHost, "--remote-port", String(remotePort))
+		}
 
 		for (const currentRegion of parseResult.layout) {
 			const imageFileName = imageTypeToFileName.get(currentRegion.type)

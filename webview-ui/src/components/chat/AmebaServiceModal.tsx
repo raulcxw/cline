@@ -135,7 +135,7 @@ const AmebaServiceModal: React.FC = () => {
 	}, [amebaSerialPorts])
 
 	const selectedPortWidth = useMemo(() => {
-		const text = amebaSelectedSerialPort || (amebaSerialPorts.length === 0 ? "No port found" : "")
+		const text = amebaSelectedSerialPort?.path || (amebaSerialPorts.length === 0 ? "No port found" : "")
 		return calculateTextWidth(text, FONT_STYLE)
 	}, [amebaSelectedSerialPort, amebaSerialPorts])
 
@@ -317,7 +317,7 @@ const AmebaServiceModal: React.FC = () => {
 					onChange={handlePortSelectionChange}
 					onMouseDown={handlePortDropdownToggle}
 					style={{ minWidth: portDropdownWidth }}
-					value={amebaSelectedSerialPort || ""}>
+					value={amebaSelectedSerialPort?.path || ""}>
 					{amebaSerialPorts.length === 0 ? (
 						<StyledOption disabled onClick={handlePortDropdownClose} value="no-port-placeholder">
 							No port found

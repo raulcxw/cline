@@ -706,7 +706,7 @@ export class Controller {
 			amebaIcSelection: amebaIcSelection as string | undefined,
 			amebaIcVariants: (amebaIcVariants as string[] | undefined) || [],
 			amebaSerialPorts: (amebaSerialPorts as AmebaPortInfo[] | undefined) || [],
-			amebaSelectedSerialPort: amebaSelectedSerialPort as string | undefined,
+			amebaSelectedSerialPort: amebaSelectedSerialPort as AmebaPortInfo | undefined,
 			amebaToolChainEnv: amebaToolChainEnv as string | undefined,
 			amebaRemoteServers: amebaRemoteServers,
 			/* realtek ameba end */
@@ -741,7 +741,7 @@ export class Controller {
 		return this.cacheService.getGlobalStateKey("amebaIcSelection")
 	}
 
-	public async getSelectedAmebaSerialPort(): Promise<string | undefined> {
+	public async getSelectedAmebaSerialPort(): Promise<AmebaPortInfo | undefined> {
 		return this.cacheService.getGlobalStateKey("amebaSelectedSerialPort")
 	}
 
@@ -1535,13 +1535,13 @@ export class Controller {
 
 		this.cacheService.setGlobalState("amebaSerialPorts", ports)
 
-		const currentSelection = this.cacheService.getGlobalStateKey("amebaSelectedSerialPort")
-		const isCurrentSelectionValid = currentSelection ? ports.some((p) => p.path === currentSelection) : false
+		const currentSelection: AmebaPortInfo | undefined = this.cacheService.getGlobalStateKey("amebaSelectedSerialPort")
+		const isCurrentSelectionValid = currentSelection ? ports.some((p) => p.path === currentSelection.path) : false
 
 		if (!isCurrentSelectionValid) {
-			const newSelection = ports.length > 0 ? ports[0].path : undefined
-			if (newSelection !== currentSelection) {
-				await this.setSelectedAmebaSerialPort(newSelection)
+			const newSelectionPath = ports.length > 0 ? ports[0].path : undefined
+			if (newSelectionPath !== currentSelection?.path) {
+				await this.setSelectedAmebaSerialPort(newSelectionPath)
 			} else {
 				// 即使選擇沒變，也可能需要更新 UI（例如列表為空）
 				await this.postStateToWebview()
@@ -1565,8 +1565,15 @@ export class Controller {
 	}
 
 	public async setSelectedAmebaSerialPort(portPath: string | undefined): Promise<void> {
-		this.cacheService.setGlobalState("amebaSelectedSerialPort", portPath)
-		console.log(`[Controller] Ameba serial port selection updated to: ${portPath}`)
+		const allPorts = this.cacheService.getGlobalStateKey("amebaSerialPorts") || []
+
+		// 根據傳入的 path 字串尋找完整的 PortInfo 物件
+		const selectedPortInfo = portPath ? allPorts.find((p) => p.path === portPath) : undefined
+
+		// 將找到的物件或 undefined 儲存到狀態中
+		this.cacheService.setGlobalState("amebaSelectedSerialPort", selectedPortInfo)
+
+		console.log(`[Controller] Ameba serial port selection updated to:`, selectedPortInfo)
 		await this.postStateToWebview()
 	}
 	/* realtek ameba add end*/
