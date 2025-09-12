@@ -70,7 +70,7 @@ const ButtonGroup = styled.div`
 // --- Styled Components End ---
 const calculateTextWidth = (text: string | null | undefined, font: string): string => {
 	const baseMinWidth = 45
-	const padding = 15
+	const padding = 20
 
 	if (!text) {
 		return `${baseMinWidth}px`

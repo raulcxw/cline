@@ -85,7 +85,8 @@ export class AmebaRemoteSerialPort {
 			// 連線錯誤會觸發 'close' 事件，這裡只記錄日誌即可
 		})
 
-		// 啟動重連邏輯
+		this.connectToServer(server)
+
 		this.startReconnectTimer(server)
 	}
 

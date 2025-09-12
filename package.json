@@ -2,8 +2,8 @@
 	"name": "cline-ameba",
 	"displayName": "Cline x Ameba",
 	"description": "Extended cline v3.26.5 to support the Realtek Ameba SoC SDK, enabling project setup, menuconfig, build, flash and monitor operations.",
-	"version": "1.0.3",
-	"icon": "assets/icons/icon.png",
+	"version": "1.0.4",
+	"icon": "assets/icons/icon_ameba.png",
 	"engines": {
 		"vscode": "^1.84.0"
 	},
@@ -106,13 +106,13 @@
 				{
 					"id": "cline-ameba-ActivityBar",
 					"title": "Cline x Ameba",
-					"icon": "assets/icons/icon_realtek.svg",
+					"icon": "assets/icons/icon_ameba.svg",
 					"when": "isMac"
 				},
 				{
 					"id": "cline-ameba-ActivityBar",
 					"title": "Cline x Ameba",
-					"icon": "assets/icons/icon_realtek.svg",
+					"icon": "assets/icons/icon_ameba.svg",
 					"when": "!isMac"
 				}
 			]
