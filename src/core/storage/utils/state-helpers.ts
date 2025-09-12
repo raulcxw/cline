@@ -70,6 +70,9 @@ export async function readStateFromDisk(context: ExtensionContext) {
 	const claudeCodePath = context.globalState.get("claudeCodePath") as string | undefined
 	const openaiReasoningEffort = context.globalState.get("openaiReasoningEffort") as OpenaiReasoningEffort | undefined
 	const preferredLanguage = context.globalState.get("preferredLanguage") as string | undefined
+	/* realtek ameba add start*/
+	const amebaRemoteServers = context.globalState.get("amebaRemoteServers") as any[] | undefined
+	/* realtek ameba add end*/
 
 	// Get all secret values
 	const [
@@ -389,6 +392,9 @@ export async function readStateFromDisk(context: ExtensionContext) {
 		isNewUser: isNewUser ?? true,
 		welcomeViewCompleted,
 		lastShownAnnouncementId,
+		/* realtek ameba add start*/
+		amebaRemoteServers: amebaRemoteServers || [],
+		/* realtek ameba add end*/
 		taskHistory: taskHistory || [],
 		autoApprovalSettings: autoApprovalSettings || DEFAULT_AUTO_APPROVAL_SETTINGS, // default value can be 0 or empty string
 		globalClineRulesToggles: globalClineRulesToggles || {},
