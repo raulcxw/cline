@@ -490,16 +490,11 @@ export async function activate(context: vscode.ExtensionContext) {
 	/* realtek ameba add start*/
 	context.subscriptions.push(
 		vscode.commands.registerCommand("cline-ameba.manageRemoteServers", async () => {
-			// 1. 取得 Controller 的實例
-			// 根據您的程式碼結構，sidebarWebview 持有主要的 controller 實例
 			const sidebarInstance = WebviewProvider.getSidebarInstance() as VscodeWebviewProvider
 
 			if (sidebarInstance && sidebarInstance.controller) {
-				// 2. 呼叫實例上的 amebaManageRemoteServers 方法
-				// 由於 amebaManageRemoteServers 是 private，您需要先將它改為 public
-				await sidebarInstance.controller.amebaManageRemoteServers()
+				await sidebarInstance.controller.amebaConfigRemoteServers()
 			} else {
-				// 如果找不到 controller，給予使用者提示
 				HostProvider.window.showMessage({
 					type: ShowMessageType.ERROR,
 					message: "Ameba controller is not available. Please open the 'Cline x Ameba' sidebar first.",
