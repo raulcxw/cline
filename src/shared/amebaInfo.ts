@@ -28,3 +28,12 @@ export type AmebaPortInfo = (LocalPortInfo | RemotePortInfo) & {
 	serverName: string
 	host: string
 }
+
+export type AmebaExample = {
+	/** 範例的最終名稱，例如 "mp3" */
+	name: string
+	/** 用於編譯的相對路徑，例如 "audio/mp3" 或 "ota" */
+	path: string
+	/** 如果是二級目錄，這裡會是父目錄的名稱，例如 "audio" */
+	category?: string
+}

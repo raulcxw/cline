@@ -2,7 +2,7 @@
 
 import { AutoApprovalSettings } from "./AutoApprovalSettings"
 /* realtek ameba add start*/
-import { AmebaPortInfo, AmebaRemoteServer } from "./amebaInfo"
+import { AmebaExample, AmebaPortInfo, AmebaRemoteServer } from "./amebaInfo"
 import { ApiConfiguration } from "./api"
 import { BrowserSettings } from "./BrowserSettings"
 import { ClineRulesToggles } from "./cline-rules"
@@ -83,6 +83,7 @@ export interface ExtensionState {
 	amebaSerialPorts: AmebaPortInfo[]
 	amebaSelectedSerialPort?: AmebaPortInfo
 	amebaRemoteServers: AmebaRemoteServer[]
+	amebaExamples: AmebaExample[]
 	/* realtek ameba add end*/
 }
 

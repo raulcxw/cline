@@ -3,7 +3,7 @@ import { FocusChainSettings } from "@shared/FocusChainSettings"
 import { LanguageModelChatSelector } from "vscode"
 import { AutoApprovalSettings } from "@/shared/AutoApprovalSettings"
 /* realtek ameba add start*/
-import { AmebaPortInfo, AmebaRemoteServer } from "@/shared/amebaInfo"
+import { AmebaExample, AmebaPortInfo, AmebaRemoteServer } from "@/shared/amebaInfo"
 import { BrowserSettings } from "@/shared/BrowserSettings"
 import { ClineRulesToggles } from "@/shared/cline-rules"
 import { HistoryItem } from "@/shared/HistoryItem"
@@ -186,6 +186,7 @@ export type GlobalStateKey =
 	| "amebaSerialPorts"
 	| "amebaSelectedSerialPort"
 	| "amebaRemoteServers"
+	| "amebaExamples"
 /* realtek ameba add end*/
 
 export type LocalStateKey = "localClineRulesToggles" | "localCursorRulesToggles" | "localWindsurfRulesToggles" | "workflowToggles"
@@ -326,6 +327,7 @@ export interface GlobalState {
 	amebaSerialPorts: AmebaPortInfo[] | undefined
 	amebaSelectedSerialPort: AmebaPortInfo | undefined
 	amebaRemoteServers: AmebaRemoteServer[] | undefined
+	amebaExamples: AmebaExample[] | undefined
 	/* realtek ameba add end*/
 }
 

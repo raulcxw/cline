@@ -25,7 +25,7 @@ import { HostProvider } from "@/hosts/host-provider"
 import { AuthService } from "@/services/auth/AuthService"
 import { PostHogClientProvider, telemetryService } from "@/services/posthog/PostHogClientProvider"
 /* realtek ameba add start*/
-import { AmebaPortInfo, AmebaRemoteServer } from "@/shared/amebaInfo"
+import { AmebaExample, AmebaPortInfo, AmebaRemoteServer } from "@/shared/amebaInfo"
 import { getLatestAnnouncementId } from "@/utils/announcements"
 import { getCwd, getDesktopDir } from "@/utils/path"
 import { CacheService, PersistenceErrorEvent } from "../storage/CacheService"
@@ -630,8 +630,7 @@ export class Controller {
 		const amebaSelectedSerialPort = this.cacheService.getGlobalStateKey("amebaSelectedSerialPort")
 		const amebaToolChainEnv = this.cacheService.getGlobalStateKey("amebaToolChainEnv")
 		const amebaIcVariants = this.cacheService.getGlobalStateKey("amebaIcVariants")
-
-		// [修改] 获取多服务器配置
+		const amebaExamples = this.cacheService.getGlobalStateKey("amebaExamples")
 		const amebaRemoteServers = this.getAmebaRemoteServers()
 
 		const currentTaskItem = this.task?.taskId ? (taskHistory || []).find((item) => item.id === this.task?.taskId) : undefined
@@ -699,7 +698,8 @@ export class Controller {
 			amebaSerialPorts: (amebaSerialPorts as AmebaPortInfo[] | undefined) || [],
 			amebaSelectedSerialPort: amebaSelectedSerialPort as AmebaPortInfo | undefined,
 			amebaToolChainEnv: amebaToolChainEnv as string | undefined,
-			amebaRemoteServers: amebaRemoteServers,
+			amebaRemoteServers: (amebaRemoteServers as AmebaRemoteServer[]) || [],
+			amebaExamples: (amebaExamples as AmebaExample[] | undefined) || [],
 			/* realtek ameba end */
 		}
 	}
@@ -757,6 +757,13 @@ export class Controller {
 				})
 			}
 		}
+	}
+
+	public async setAmebaExamples(examples: AmebaExample[]): Promise<void> {
+		this.cacheService.setGlobalState("amebaExamples", examples)
+		console.log(`[Controller] Ameba examples updated with ${examples.length} items.`)
+		// 注意：這裡不需要單獨呼叫 postStateToWebview，
+		// 因為 AmebaEnvManager 在完成所有設定後會統一呼叫一次。
 	}
 
 	public async setAmebaIcSelection(icSelection: string | undefined): Promise<void> {

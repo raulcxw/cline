@@ -10,6 +10,7 @@ import * as tar from "tar"
 import * as vscode from "vscode"
 import { Controller } from "@/core/controller" // 為了型別提示
 import { HostProvider } from "@/hosts/host-provider"
+import { AmebaExample } from "@/shared/amebaInfo"
 import { fileExistsAtPath } from "@/utils/fs"
 
 const AMEBA_SDK_MARKERS = ["Realtek_Disclaimer-2019.pdf", "ameba.bat", "ameba.sh"]
@@ -57,13 +58,16 @@ export class AmebaEnvManager {
 		if (foundSdkPath) {
 			const version = await this.parseAmebaRtosVersion(foundSdkPath)
 			const variants = await this.getAmebaIcVariantsFromSdk(foundSdkPath)
+			const examples = await this.parseAmebaExamples(foundSdkPath)
 			await this.controller.setAmebaSdkVersion(version)
 			await this.controller.setAmebaIcVariants(variants)
+			await this.controller.setAmebaExamples(examples)
 			await this.checkAndSetupAmebaToolChainEnv(foundSdkPath)
 		} else {
 			await this.controller.setAmebaToolChainEnv(undefined)
 			await this.controller.setAmebaSdkVersion(undefined)
 			await this.controller.setAmebaIcVariants([])
+			await this.controller.setAmebaExamples([])
 			HostProvider.window.showMessage({
 				type: ShowMessageType.WARNING,
 				message: "Ameba SDK not found in the workspace. Please open an Ameba SDK project or set the path manually.",
@@ -628,6 +632,65 @@ export class AmebaEnvManager {
 				channel.appendLine(`> Failed to start command: ${err.message}`)
 				reject(err)
 			})
+		})
+	}
+
+	private async parseAmebaExamples(sdkRoot: string): Promise<AmebaExample[]> {
+		const examplesBasePath = path.join(sdkRoot, "component", "example")
+		const collectedExamples: AmebaExample[] = []
+
+		if (!(await fileExistsAtPath(examplesBasePath))) {
+			console.warn(`[Ameba SDK] Example directory not found at: ${examplesBasePath}`)
+			return []
+		}
+
+		try {
+			const topLevelEntries = await fs.readdir(examplesBasePath, { withFileTypes: true })
+
+			for (const entry of topLevelEntries) {
+				if (!entry.isDirectory()) continue
+
+				const categoryPath = path.join(examplesBasePath, entry.name)
+
+				// 啟發式規則：如果一個目錄下直接包含 Makefile，我們視其為一個可編譯的範例。
+				const isFirstLevelExample = await fileExistsAtPath(path.join(categoryPath, "CMakeLists.txt"))
+
+				if (isFirstLevelExample) {
+					// 這是一個一級範例 (例如：component/example/ota)
+					collectedExamples.push({
+						name: entry.name,
+						path: entry.name, // 相對路徑就是目錄名本身
+					})
+				} else {
+					// 這可能是一個分類目錄 (例如：component/example/audio)
+					// 我們需要查看它的二級子目錄
+					const subLevelEntries = await fs.readdir(categoryPath, { withFileTypes: true })
+					for (const subEntry of subLevelEntries) {
+						if (subEntry.isDirectory()) {
+							// 假設分類目錄下的所有子目錄都是範例
+							collectedExamples.push({
+								name: subEntry.name,
+								category: entry.name, // 父目錄作為分類
+								// 產生用於編譯的路徑，例如 "audio/mp3"，並確保使用正斜線
+								path: path.join(entry.name, subEntry.name).replace(/\\/g, "/"),
+							})
+						}
+					}
+				}
+			}
+		} catch (error) {
+			console.error("[Ameba SDK] Failed to parse examples:", error)
+			return [] // 出錯時回傳空陣列
+		}
+
+		// 按照分類和名稱排序，方便 UI 顯示
+		return collectedExamples.sort((a, b) => {
+			const categoryA = a.category || ""
+			const categoryB = b.category || ""
+			if (categoryA !== categoryB) {
+				return categoryA.localeCompare(categoryB)
+			}
+			return a.name.localeCompare(b.name)
 		})
 	}
 }

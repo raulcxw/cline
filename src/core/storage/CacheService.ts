@@ -788,6 +788,7 @@ export class CacheService {
 			amebaSerialPorts: state.amebaSerialPorts,
 			amebaSelectedSerialPort: state.amebaSelectedSerialPort,
 			amebaRemoteServers: state.amebaRemoteServers,
+			amebaExamples: state.amebaExamples,
 			/* realtek ameba add end*/
 
 			// Plan mode configuration updates
