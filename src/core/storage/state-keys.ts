@@ -187,6 +187,7 @@ export type GlobalStateKey =
 	| "amebaSelectedSerialPort"
 	| "amebaRemoteServers"
 	| "amebaExamples"
+	| "amebaSelectedExample"
 /* realtek ameba add end*/
 
 export type LocalStateKey = "localClineRulesToggles" | "localCursorRulesToggles" | "localWindsurfRulesToggles" | "workflowToggles"
@@ -328,6 +329,7 @@ export interface GlobalState {
 	amebaSelectedSerialPort: AmebaPortInfo | undefined
 	amebaRemoteServers: AmebaRemoteServer[] | undefined
 	amebaExamples: AmebaExample[] | undefined
+	amebaSelectedExample: AmebaExample | undefined
 	/* realtek ameba add end*/
 }
 

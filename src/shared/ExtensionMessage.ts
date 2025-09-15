@@ -84,6 +84,7 @@ export interface ExtensionState {
 	amebaSelectedSerialPort?: AmebaPortInfo
 	amebaRemoteServers: AmebaRemoteServer[]
 	amebaExamples: AmebaExample[]
+	amebaSelectedExample?: AmebaExample
 	/* realtek ameba add end*/
 }
 

@@ -213,6 +213,7 @@ export const ExtensionStateContextProvider: React.FC<{
 		amebaSelectedSerialPort: undefined,
 		amebaRemoteServers: [],
 		amebaExamples: [],
+		amebaSelectedExample: undefined,
 		/* realtek ameba add end*/
 	})
 	const [didHydrateState, setDidHydrateState] = useState(false)

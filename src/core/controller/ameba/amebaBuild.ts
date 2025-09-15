@@ -9,6 +9,7 @@ export async function amebaBuild(controller: Controller, _request: EmptyRequest)
 		// 1. Get the SDK root and selected IC and serial port dynamically from the controller.
 		const sdkRoot = await controller.getAmebaSdkRoot()
 		const icSelection = await controller.getAmebaIcSelection()
+		const example = await controller.getSelectedAmebaExample()
 
 		// 2.1 Check if the SDK path is available.
 		if (!sdkRoot) {
@@ -34,7 +35,14 @@ export async function amebaBuild(controller: Controller, _request: EmptyRequest)
 		const buildDir = path.join(sdkRoot, buildProjectDirName)
 
 		// 4. Define the build command.
-		const buildScriptName = "python build.py"
+		let buildCommand = "python build.py"
+		if (example && example.name) {
+			// 如果有選擇範例，則附加 -a <example_name> 參數
+			buildCommand += ` -a ${example.name}`
+			console.log(`amebaBuild: Building with selected example: ${example.name}`)
+		} else {
+			console.log("amebaBuild: No example selected, performing a standard build.")
+		}
 
 		// 5. Get a dedicated terminal for Ameba tasks.
 		// The terminal's initial CWD is set to the SDK root for consistency.
@@ -59,8 +67,8 @@ export async function amebaBuild(controller: Controller, _request: EmptyRequest)
 		console.log(`amebaBuild to terminal: cd "${buildDir}"`)
 
 		// Command 2: Execute the build script in that directory.
-		terminalInfo.terminal.sendText(buildScriptName, true)
-		console.log(`amebaBuild to terminal: ${buildScriptName}`)
+		terminalInfo.terminal.sendText(buildCommand, true)
+		console.log(`amebaBuild to terminal: ${buildCommand}`)
 
 		return Empty.create({})
 	} catch (error) {

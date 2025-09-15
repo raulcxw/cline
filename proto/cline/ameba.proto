@@ -13,5 +13,6 @@ service AmebaService {
   rpc amebaUpdateChipSelection(StringRequest) returns (Empty);
   rpc amebaUpdateSerialPort(StringRequest) returns (Empty);
   rpc amebaRefreshSerialPorts(EmptyRequest) returns (Empty);
+  rpc amebaUpdateExample(StringRequest) returns (Empty);  
   rpc amebaOpenDocUrl(StringRequest) returns (Empty);
 }

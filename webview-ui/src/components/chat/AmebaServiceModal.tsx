@@ -1,10 +1,20 @@
+import { AmebaExample } from "@shared/amebaInfo"
 import { EmptyRequest, StringRequest } from "@shared/proto/cline/common"
 import { VSCodeButton, VSCodeDropdown, VSCodeOption } from "@vscode/webview-ui-toolkit/react"
+import path from "path"
 import React, { useMemo, useState } from "react"
 import styled from "styled-components"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { AmebaServiceClient } from "@/services/grpc-client"
 import Tooltip from "../common/Tooltip"
+
+// 新增：主容器，用於將佈局分為多行
+const Container = styled.div`
+	display: flex;
+	flex-direction: column;
+	gap: 4px; /* 行之間的間距 */
+	padding-bottom: 8px; /* 底部整體邊距 */
+`
 
 // --- Styled Components ---
 const StyledLinkDropdown = styled(VSCodeDropdown)`
@@ -52,13 +62,32 @@ const StyledOption = styled(VSCodeOption)`
 	}
 `
 
+// 新增：用於在下拉選單中顯示分類標題的樣式
+const OptGroupLabel = styled(VSCodeOption)`
+	opacity: 0.7;
+	font-weight: bold;
+	color: var(--vscode-descriptionForeground);
+	pointer-events: none; /* 使其不可點擊 */
+
+	&::part(content) {
+		font-size: 11px;
+		padding-left: 4px;
+		background: var(--vscode-editor-background);
+	}
+`
+
 const ControlsRow = styled.div`
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	padding: 0 15px 8px 15px;
+	padding: 0 15px;
 	font-size: 12px;
 	color: var(--vscode-descriptionForeground);
+`
+
+// 新增：用於第二行的 ControlsRow，增加了左邊距以對齊
+const SecondControlsRow = styled(ControlsRow)`
+	padding-left: 38px; /* 根據第一行圖標和間距調整，使其對齊 */
 `
 
 const ButtonGroup = styled.div`
@@ -100,11 +129,13 @@ const AmebaServiceModal: React.FC = () => {
 		amebaIcVariants,
 		amebaSerialPorts,
 		amebaSelectedSerialPort,
+		amebaExamples,
+		amebaSelectedExample,
 	} = useExtensionState()
 
 	const [isIcDropdownOpen, setIsIcDropdownOpen] = useState(false)
-	// --- [新增] 用於追蹤 Port 下拉選單開關狀態 ---
 	const [isPortDropdownOpen, setIsPortDropdownOpen] = useState(false)
+	const [isExampleDropdownOpen, setIsExampleDropdownOpen] = useState(false)
 
 	const isAmebaSdkReady = !!(amebaSdkRoot && amebaToolChainEnv)
 
@@ -140,7 +171,33 @@ const AmebaServiceModal: React.FC = () => {
 	}, [amebaSelectedSerialPort, amebaSerialPorts])
 
 	const portDropdownWidth = isPortDropdownOpen ? longestPortWidth : selectedPortWidth
-	// --- [新增結束] ---
+
+	const longestExampleWidth = useMemo(() => {
+		if (!amebaExamples || amebaExamples.length === 0) return calculateTextWidth("No example", FONT_STYLE)
+		const longestExample = amebaExamples.reduce((a, b) => (a.path.length > b.path.length ? a : b))
+		return calculateTextWidth(longestExample.path, FONT_STYLE)
+	}, [amebaExamples])
+	const selectedExampleWidth = useMemo(
+		() => calculateTextWidth(amebaSelectedExample?.name || "Select Example", FONT_STYLE),
+		[amebaSelectedExample],
+	)
+	const exampleDropdownWidth = isExampleDropdownOpen ? longestExampleWidth : selectedExampleWidth
+
+	const groupedExamples = useMemo(() => {
+		if (!amebaExamples) return {}
+		return amebaExamples.reduce(
+			(acc, example) => {
+				const category = example.category || "General" // 將沒有分類的範例歸為 "General"
+				if (!acc[category]) {
+					acc[category] = []
+				}
+				acc[category].push(example)
+				return acc
+			},
+			{} as Record<string, AmebaExample[]>,
+		)
+	}, [amebaExamples])
+	const exampleCategories = Object.keys(groupedExamples)
 
 	// --- IC Dropdown Event Handlers ---
 	const handleIcDropdownToggle = () => {
@@ -159,7 +216,9 @@ const AmebaServiceModal: React.FC = () => {
 	const handlePortDropdownClose = () => {
 		setIsPortDropdownOpen(false)
 	}
-	// --- [新增結束] ---
+
+	const handleExampleDropdownToggle = () => setIsExampleDropdownOpen((c) => !c)
+	const handleExampleDropdownClose = () => setIsExampleDropdownOpen(false)
 
 	// --- Event Handlers (部分修改) ---
 	const handleMenuConfigClick = async () => {
@@ -227,6 +286,20 @@ const AmebaServiceModal: React.FC = () => {
 
 	const portDropdownKey = amebaSerialPorts.length
 
+	// 新增：Example Selection Change Handler
+	const handleExampleSelectionChange = async (e: any) => {
+		const newExamplePath = e.target.value
+		console.log(`update example to:${amebaSelectedExample} ${newExamplePath}`)
+		if (newExamplePath && newExamplePath !== amebaSelectedExample?.path) {
+			try {
+				console.log("update example to:", newExamplePath)
+				await AmebaServiceClient.amebaUpdateExample(StringRequest.create({ value: newExamplePath }))
+			} catch (error) {
+				console.error("Failed to update Ameba Example selection:", error)
+			}
+		}
+	}
+
 	const getDisabledTooltipText = (): string => {
 		const sdkError = "Ameba SDK not found. Please open an SDK project folder or set the path manually."
 		const toolchainError = "Ameba Toolchain directory and Prebuilts check failed. Please verify the installation."
@@ -276,110 +349,146 @@ const AmebaServiceModal: React.FC = () => {
 
 	// --- 渲染部分 ---
 	return (
-		<ControlsRow>
-			<Tooltip style={chipTooltipStyle} tipText={chipTooltipText}>
-				<span
-					className="codicon codicon-chip"
-					style={{
-						fontSize: "16px",
-						verticalAlign: "middle",
-						cursor: "default",
-						color: isAmebaSdkReady ? "var(--vscode-textLink-foreground)" : "var(--vscode-disabledForeground)",
-					}}></span>
-			</Tooltip>
+		<Container>
+			<ControlsRow>
+				<Tooltip style={chipTooltipStyle} tipText={chipTooltipText}>
+					<span
+						className="codicon codicon-chip"
+						style={{
+							fontSize: "16px",
+							verticalAlign: "middle",
+							cursor: "default",
+							color: isAmebaSdkReady ? "var(--vscode-textLink-foreground)" : "var(--vscode-disabledForeground)",
+						}}></span>
+				</Tooltip>
 
-			<Tooltip
-				style={isAmebaSdkReady ? dropdownTooltipStyle : chipTooltipStyle}
-				tipText={isAmebaSdkReady ? "Select Chip" : disabledTooltipText}>
-				<StyledLinkDropdown
-					disabled={!isAmebaSdkReady}
-					onBlur={handleIcDropdownClose}
-					onChange={handleIcSelectionChange}
-					onMouseDown={handleIcDropdownToggle}
-					style={{ minWidth: icDropdownWidth }}
-					value={amebaIcSelection || ""}>
-					{(amebaIcVariants || []).map((variant) => (
-						<StyledOption key={variant} onClick={handleIcDropdownClose} value={variant}>
-							{variant}
-						</StyledOption>
-					))}
-				</StyledLinkDropdown>
-			</Tooltip>
-
-			<Tooltip
-				style={isAmebaSdkReady ? dropdownTooltipStyle : chipTooltipStyle}
-				tipText={isAmebaSdkReady ? "Select Serial Port" : disabledTooltipText}>
-				{/* --- [修改] 將 Port Dropdown 套用動態寬度與事件處理 --- */}
-				<StyledLinkDropdown
-					disabled={!isAmebaSdkReady}
-					key={portDropdownKey}
-					onBlur={handlePortDropdownClose}
-					onChange={handlePortSelectionChange}
-					onMouseDown={handlePortDropdownToggle}
-					style={{ minWidth: portDropdownWidth }}
-					value={amebaSelectedSerialPort?.path || ""}>
-					{amebaSerialPorts.length === 0 ? (
-						<StyledOption disabled onClick={handlePortDropdownClose} value="no-port-placeholder">
-							No port found
-						</StyledOption>
-					) : (
-						amebaSerialPorts.map((port) => (
-							<StyledOption key={port.path} onClick={handlePortDropdownClose} value={port.path}>
-								{port.path}
+				<Tooltip
+					style={isAmebaSdkReady ? dropdownTooltipStyle : chipTooltipStyle}
+					tipText={isAmebaSdkReady ? "Select Chip" : disabledTooltipText}>
+					<StyledLinkDropdown
+						disabled={!isAmebaSdkReady}
+						onBlur={handleIcDropdownClose}
+						onChange={handleIcSelectionChange}
+						onMouseDown={handleIcDropdownToggle}
+						style={{ minWidth: icDropdownWidth }}
+						value={amebaIcSelection || ""}>
+						{(amebaIcVariants || []).map((variant) => (
+							<StyledOption key={variant} onClick={handleIcDropdownClose} value={variant}>
+								{variant}
 							</StyledOption>
-						))
-					)}
-				</StyledLinkDropdown>
-			</Tooltip>
+						))}
+					</StyledLinkDropdown>
+				</Tooltip>
 
-			<ButtonGroup>
-				<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Menuconfig" : disabledTooltipText}>
-					<VSCodeButton
-						appearance="icon"
-						aria-label="Ameba Menuconfig"
+				<Tooltip
+					style={isAmebaSdkReady ? dropdownTooltipStyle : chipTooltipStyle}
+					tipText={isAmebaSdkReady ? "Select Example" : disabledTooltipText}>
+					<StyledLinkDropdown
 						disabled={!isAmebaSdkReady}
-						onClick={handleMenuConfigClick}>
-						<span className="codicon codicon-checklist" />
-					</VSCodeButton>
+						onBlur={handleExampleDropdownClose}
+						onChange={handleExampleSelectionChange}
+						onMouseDown={handleExampleDropdownToggle}
+						style={{ minWidth: exampleDropdownWidth }}
+						value={amebaSelectedExample?.path || ""}>
+						{amebaExamples.length === 0 ? (
+							<StyledOption disabled value="no-example-placeholder">
+								No example found
+							</StyledOption>
+						) : (
+							exampleCategories.map((category) => (
+								<React.Fragment key={category}>
+									<OptGroupLabel>{category}</OptGroupLabel>
+									{groupedExamples[category].map((example) => (
+										<StyledOption
+											key={example.path}
+											onClick={handleExampleDropdownClose}
+											value={example.path}>
+											{example.name}
+										</StyledOption>
+									))}
+								</React.Fragment>
+							))
+						)}
+					</StyledLinkDropdown>
 				</Tooltip>
+			</ControlsRow>
 
-				<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Build" : disabledTooltipText}>
-					<VSCodeButton
-						appearance="icon"
-						aria-label="Ameba Build"
+			<SecondControlsRow>
+				<Tooltip
+					style={isAmebaSdkReady ? dropdownTooltipStyle : chipTooltipStyle}
+					tipText={isAmebaSdkReady ? "Select Serial Port" : disabledTooltipText}>
+					{/* --- [修改] 將 Port Dropdown 套用動態寬度與事件處理 --- */}
+					<StyledLinkDropdown
 						disabled={!isAmebaSdkReady}
-						onClick={handleBuildClick}>
-						<span className="codicon codicon-tools" />
-					</VSCodeButton>
+						key={portDropdownKey}
+						onBlur={handlePortDropdownClose}
+						onChange={handlePortSelectionChange}
+						onMouseDown={handlePortDropdownToggle}
+						style={{ minWidth: portDropdownWidth }}
+						value={amebaSelectedSerialPort?.path || ""}>
+						{amebaSerialPorts.length === 0 ? (
+							<StyledOption disabled onClick={handlePortDropdownClose} value="no-port-placeholder">
+								No port found
+							</StyledOption>
+						) : (
+							amebaSerialPorts.map((port) => (
+								<StyledOption key={port.path} onClick={handlePortDropdownClose} value={port.path}>
+									{port.path}
+								</StyledOption>
+							))
+						)}
+					</StyledLinkDropdown>
 				</Tooltip>
 
-				<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Flash" : disabledTooltipText}>
-					<VSCodeButton
-						appearance="icon"
-						aria-label="Ameba Flash"
-						disabled={!isAmebaSdkReady}
-						onClick={handleFlashClick}>
-						<span className="codicon codicon-symbol-event" />
-					</VSCodeButton>
-				</Tooltip>
+				<ButtonGroup>
+					<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Menuconfig" : disabledTooltipText}>
+						<VSCodeButton
+							appearance="icon"
+							aria-label="Ameba Menuconfig"
+							disabled={!isAmebaSdkReady}
+							onClick={handleMenuConfigClick}>
+							<span className="codicon codicon-checklist" />
+						</VSCodeButton>
+					</Tooltip>
 
-				<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Monitor" : disabledTooltipText}>
-					<VSCodeButton
-						appearance="icon"
-						aria-label="Ameba Monitor"
-						disabled={!isAmebaSdkReady}
-						onClick={handleMonitorClick}>
-						<span className="codicon codicon-vm" />
-					</VSCodeButton>
-				</Tooltip>
+					<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Build" : disabledTooltipText}>
+						<VSCodeButton
+							appearance="icon"
+							aria-label="Ameba Build"
+							disabled={!isAmebaSdkReady}
+							onClick={handleBuildClick}>
+							<span className="codicon codicon-tools" />
+						</VSCodeButton>
+					</Tooltip>
 
-				<Tooltip tipText="Ameba Documents">
-					<VSCodeButton appearance="icon" aria-label="Ameba Doc" onClick={handleOpenDocsClick}>
-						<span className="codicon codicon-book" />
-					</VSCodeButton>
-				</Tooltip>
-			</ButtonGroup>
-		</ControlsRow>
+					<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Flash" : disabledTooltipText}>
+						<VSCodeButton
+							appearance="icon"
+							aria-label="Ameba Flash"
+							disabled={!isAmebaSdkReady}
+							onClick={handleFlashClick}>
+							<span className="codicon codicon-symbol-event" />
+						</VSCodeButton>
+					</Tooltip>
+
+					<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Monitor" : disabledTooltipText}>
+						<VSCodeButton
+							appearance="icon"
+							aria-label="Ameba Monitor"
+							disabled={!isAmebaSdkReady}
+							onClick={handleMonitorClick}>
+							<span className="codicon codicon-vm" />
+						</VSCodeButton>
+					</Tooltip>
+
+					<Tooltip tipText="Ameba Documents">
+						<VSCodeButton appearance="icon" aria-label="Ameba Doc" onClick={handleOpenDocsClick}>
+							<span className="codicon codicon-book" />
+						</VSCodeButton>
+					</Tooltip>
+				</ButtonGroup>
+			</SecondControlsRow>
+		</Container>
 	)
 }
 

@@ -631,6 +631,7 @@ export class Controller {
 		const amebaToolChainEnv = this.cacheService.getGlobalStateKey("amebaToolChainEnv")
 		const amebaIcVariants = this.cacheService.getGlobalStateKey("amebaIcVariants")
 		const amebaExamples = this.cacheService.getGlobalStateKey("amebaExamples")
+		const amebaSelectedExample = this.cacheService.getGlobalStateKey("amebaSelectedExample")
 		const amebaRemoteServers = this.getAmebaRemoteServers()
 
 		const currentTaskItem = this.task?.taskId ? (taskHistory || []).find((item) => item.id === this.task?.taskId) : undefined
@@ -700,6 +701,7 @@ export class Controller {
 			amebaToolChainEnv: amebaToolChainEnv as string | undefined,
 			amebaRemoteServers: (amebaRemoteServers as AmebaRemoteServer[]) || [],
 			amebaExamples: (amebaExamples as AmebaExample[] | undefined) || [],
+			amebaSelectedExample: amebaSelectedExample as AmebaExample | undefined,
 			/* realtek ameba end */
 		}
 	}
@@ -734,6 +736,10 @@ export class Controller {
 
 	public async getSelectedAmebaSerialPort(): Promise<AmebaPortInfo | undefined> {
 		return this.cacheService.getGlobalStateKey("amebaSelectedSerialPort")
+	}
+
+	public async getSelectedAmebaExample(): Promise<AmebaExample | undefined> {
+		return this.cacheService.getGlobalStateKey("amebaSelectedExample")
 	}
 
 	public async setAmebaSdkRoot(sdkRoot: string | undefined): Promise<void> {
@@ -877,6 +883,19 @@ export class Controller {
 		this.cacheService.setGlobalState("amebaSelectedSerialPort", selectedPortInfo)
 
 		console.log(`[Controller] Ameba serial port selection updated to:`, selectedPortInfo)
+		await this.postStateToWebview()
+	}
+
+	public async setSelectedAmebaExample(portPath: string | undefined): Promise<void> {
+		const allPorts = this.cacheService.getGlobalStateKey("amebaExamples") || []
+
+		// 根據傳入的 path 字串尋找完整的 PortInfo 物件
+		const selectedExample = portPath ? allPorts.find((p) => p.path === portPath) : undefined
+
+		// 將找到的物件或 undefined 儲存到狀態中
+		this.cacheService.setGlobalState("amebaSelectedExample", selectedExample)
+
+		console.log(`[Controller] Ameba Example selection updated to:`, selectedExample)
 		await this.postStateToWebview()
 	}
 	/* realtek ameba add end*/
