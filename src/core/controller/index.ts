@@ -866,7 +866,7 @@ export class Controller {
 		}
 
 		this.portRefreshInterval = setInterval(() => {
-			console.log("[Controller] Periodically refreshing serial ports...")
+			console.log("[Controller] Periodically refreshing serial ports")
 			this.forceRefreshSerialPorts().catch((err) => console.error("[Controller] Failed to refresh ports:", err))
 		}, intervalMs)
 
