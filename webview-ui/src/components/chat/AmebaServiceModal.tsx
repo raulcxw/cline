@@ -7,7 +7,7 @@ import { useExtensionState } from "@/context/ExtensionStateContext"
 import { AmebaServiceClient } from "@/services/grpc-client"
 import Tooltip from "../common/Tooltip"
 
-// --- 全局容器與行列樣式 (無變更) ---
+// --- 全局容器與行列樣式 ---
 const Container = styled.div`
 	display: flex;
 	flex-direction: column;
@@ -37,12 +37,10 @@ const CustomDropdownContainer = styled.div`
 	display: inline-block;
 `
 
-// --- [核心修改] 為觸發按鈕新增邊框與圓角 ---
 const DropdownTriggerButton = styled.button`
 	background: transparent;
-	/* border: none; */ /* 移除此行 */
-	border: 1px solid var(--vscode-dropdown-border); /* 新增邊框，使用主題變數 */
-	border-radius: 3px; /* 新增小圓角 */
+	border: 1px solid var(--vscode-dropdown-border);
+	border-radius: 3px;
 	color: var(--vscode-descriptionForeground);
 	font-size: 12px;
 	font-family: var(--vscode-font-family);
@@ -54,7 +52,7 @@ const DropdownTriggerButton = styled.button`
 	&:hover:not(:disabled) {
 		color: var(--vscode-foreground);
 		text-decoration: underline;
-		border-color: var(--vscode-focusBorder); /* 滑鼠懸停時邊框顏色可以更明顯 */
+		border-color: var(--vscode-focusBorder);
 	}
 
 	&:disabled {
@@ -79,7 +77,6 @@ const DropdownListbox = styled.div`
 	overflow-y: auto;
 `
 
-// --- 選項的 Styled Components (無變更) ---
 const DropdownOption = styled.div`
 	background: transparent;
 	color: var(--vscode-foreground);
@@ -94,36 +91,44 @@ const DropdownOption = styled.div`
 	}
 `
 
-// --- 範例選單專用的 Styled Components (無變更) ---
-const CategoryHeader = styled.div`
+// --- 遞迴樹狀範例選單專用樣式 ---
+const NodeContainer = styled.div<{ $isClickable: boolean }>`
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	padding: 6px 8px;
-	cursor: pointer;
+	cursor: ${(props) => (props.$isClickable ? "pointer" : "default")};
 	font-size: 12px;
 	user-select: none;
 	color: var(--vscode-foreground);
 	border-radius: 2px;
-	font-weight: bold;
+	white-space: nowrap;
 
 	&:hover {
 		background: var(--vscode-list-hoverBackground);
 	}
 `
 
+const NodeLabel = styled.span`
+	flex-grow: 1;
+`
+
 const ChevronIcon = styled.span<{ $isExpanded: boolean }>`
 	font-size: 12px;
 	margin-left: 8px;
+	flex-shrink: 0;
 	transform: ${(props) => (props.$isExpanded ? "rotate(90deg)" : "rotate(0deg)")};
 	transition: transform 0.2s ease-in-out;
+	cursor: pointer;
+`
+const PlaceholderIcon = styled.span`
+	font-size: 12px;
+	margin-left: 8px;
+	flex-shrink: 0;
+	width: 1em; /* 佔位，與 ChevronIcon 對齊 */
 `
 
-const ExampleDropdownOption = styled(DropdownOption)`
-	padding-left: 24px;
-`
-
-// --- 寬度計算函式 (無變更) ---
+// --- 寬度計算函式 ---
 const calculateTextWidth = (text: string | null | undefined, font: string): string => {
 	const baseMinWidth = 45
 	const padding = 20
@@ -147,6 +152,72 @@ const calculateTextWidth = (text: string | null | undefined, font: string): stri
 	return `${Math.max(baseMinWidth, text.length * 8 + padding)}px`
 }
 
+// --- 樹狀結構的型別定義 ---
+interface ExampleTreeNode {
+	children: { [key: string]: ExampleTreeNode }
+	isExample: boolean
+	data?: AmebaExample
+}
+
+// --- 遞迴渲染元件 ---
+const RecursiveExampleNode: React.FC<{
+	name: string
+	node: ExampleTreeNode
+	level: number
+	onSelect: (path: string) => void
+}> = ({ name, node, level, onSelect }) => {
+	const [isExpanded, setIsExpanded] = useState(false)
+	const hasChildren = Object.keys(node.children).length > 0
+
+	const handleNodeClick = () => {
+		if (node.isExample && node.data) {
+			onSelect(node.data.path)
+		} else if (hasChildren) {
+			setIsExpanded(!isExpanded)
+		}
+	}
+
+	const handleChevronClick = (e: React.MouseEvent) => {
+		e.stopPropagation()
+		if (hasChildren) {
+			setIsExpanded(!isExpanded)
+		}
+	}
+
+	return (
+		<>
+			<NodeContainer
+				$isClickable={node.isExample || hasChildren}
+				onClick={handleNodeClick}
+				style={{ paddingLeft: `${8 + level * 16}px` }}>
+				<NodeLabel>{name}</NodeLabel>
+				{hasChildren ? (
+					<ChevronIcon
+						$isExpanded={isExpanded}
+						className="codicon codicon-chevron-right"
+						onClick={handleChevronClick}
+					/>
+				) : (
+					<PlaceholderIcon />
+				)}
+			</NodeContainer>
+			{isExpanded &&
+				hasChildren &&
+				Object.entries(node.children)
+					.sort(([a], [b]) => a.localeCompare(b))
+					.map(([childName, childNode]) => (
+						<RecursiveExampleNode
+							key={childName}
+							level={level + 1}
+							name={childName}
+							node={childNode}
+							onSelect={onSelect}
+						/>
+					))}
+		</>
+	)
+}
+
 const AmebaServiceModal: React.FC = () => {
 	const {
 		amebaSdkRoot,
@@ -164,9 +235,8 @@ const AmebaServiceModal: React.FC = () => {
 	const [isIcDropdownOpen, setIsIcDropdownOpen] = useState(false)
 	const [isPortDropdownOpen, setIsPortDropdownOpen] = useState(false)
 	const [isExampleDropdownOpen, setIsExampleDropdownOpen] = useState(false)
-	const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({})
 
-	// --- Refs 用於偵測點擊外部及手動失焦 ---
+	// --- Refs ---
 	const icDropdownRef = useRef<HTMLDivElement>(null)
 	const portDropdownRef = useRef<HTMLDivElement>(null)
 	const exampleDropdownRef = useRef<HTMLDivElement>(null)
@@ -174,7 +244,7 @@ const AmebaServiceModal: React.FC = () => {
 	const isAmebaSdkReady = !!(amebaSdkRoot && amebaToolChainEnv)
 	const FONT_STYLE = "12px var(--vscode-font-family, sans-serif)"
 
-	// --- 寬度計算 (無變更) ---
+	// --- 寬度計算 ---
 	const longestIcWidth = useMemo(() => {
 		if (!amebaIcVariants || amebaIcVariants.length === 0) {
 			return "75px"
@@ -197,58 +267,46 @@ const AmebaServiceModal: React.FC = () => {
 	const selectedPortWidth = useMemo(() => {
 		const text = amebaSelectedSerialPort?.path || "Select Port"
 		return calculateTextWidth(text, FONT_STYLE)
-	}, [amebaSelectedSerialPort, amebaSerialPorts])
+	}, [amebaSelectedSerialPort])
 	const portButtonWidth = isPortDropdownOpen ? longestPortWidth : selectedPortWidth
-
-	const { groupedExamples, exampleCategories } = useMemo(() => {
-		if (!amebaExamples) return { groupedExamples: {}, exampleCategories: [] }
-		const groups = amebaExamples.reduce(
-			(acc, example) => {
-				const category = example.category || "General"
-				if (!acc[category]) {
-					acc[category] = []
-				}
-				acc[category].push(example)
-				return acc
-			},
-			{} as Record<string, AmebaExample[]>,
-		)
-		return { groupedExamples: groups, exampleCategories: Object.keys(groups) }
-	}, [amebaExamples])
-
-	const openExampleDropdownWidth = useMemo(() => {
-		if (!exampleCategories.length) return calculateTextWidth("No example", FONT_STYLE)
-		let maxWidth = 0
-		const calculate = (text: string) => parseInt(calculateTextWidth(text, FONT_STYLE), 10)
-		const longestCategory = exampleCategories.reduce((a, b) => (a.length > b.length ? a : b), "")
-		maxWidth = calculate(longestCategory)
-		Object.keys(expandedCategories).forEach((category) => {
-			if (expandedCategories[category] && groupedExamples[category]) {
-				const longestExampleInCategory = groupedExamples[category].reduce(
-					(a, b) => (a.name.length > b.name.length ? a : b),
-					{
-						name: "",
-					},
-				)
-				if (longestExampleInCategory.name) {
-					const exampleWidth = calculate(longestExampleInCategory.name)
-					if (exampleWidth > maxWidth) {
-						maxWidth = exampleWidth
-					}
-				}
-			}
-		})
-		return `${maxWidth + 10}px`
-	}, [exampleCategories, groupedExamples, expandedCategories])
 
 	const selectedExampleWidth = useMemo(
 		() => calculateTextWidth(amebaSelectedExample?.name || "Select Example", FONT_STYLE),
 		[amebaSelectedExample],
 	)
 
-	const exampleButtonWidth = isExampleDropdownOpen ? openExampleDropdownWidth : selectedExampleWidth
+	const exampleButtonWidth = selectedExampleWidth
+	const exampleDropdownMinWidth = "200px"
 
-	// --- 統一處理點擊外部關閉事件的 Hook (無變更) ---
+	// --- 將扁平列表轉換為樹狀結構 ---
+	const exampleTree = useMemo(() => {
+		if (!amebaExamples) return {}
+		const root: { [key: string]: ExampleTreeNode } = {}
+
+		for (const example of amebaExamples) {
+			const parts = example.path.split("/")
+			let currentNodeChildren = root
+
+			for (let i = 0; i < parts.length; i++) {
+				const part = parts[i]
+				if (!currentNodeChildren[part]) {
+					currentNodeChildren[part] = { children: {}, isExample: false }
+				}
+				const currentNode = currentNodeChildren[part]
+
+				if (i < parts.length - 1) {
+					currentNodeChildren = currentNode.children
+				} else {
+					// 這是路徑的最後一部分，標記為範例
+					currentNode.isExample = true
+					currentNode.data = example
+				}
+			}
+		}
+		return root
+	}, [amebaExamples])
+
+	// --- 點擊外部關閉 Hook ---
 	useEffect(() => {
 		const handleClickOutside = (event: MouseEvent) => {
 			const target = event.target as Node
@@ -262,32 +320,19 @@ const AmebaServiceModal: React.FC = () => {
 				setIsExampleDropdownOpen(false)
 			}
 		}
-
 		document.addEventListener("mousedown", handleClickOutside)
 		return () => {
 			document.removeEventListener("mousedown", handleClickOutside)
 		}
 	}, [])
 
-	// --- 事件處理器 (包含手動失焦邏輯) ---
+	// --- 事件處理器 ---
 	const handleIcDropdownToggle = () => setIsIcDropdownOpen((c) => !c)
 	const handlePortDropdownToggle = () => setIsPortDropdownOpen((c) => !c)
-	const handleExampleDropdownToggle = () => {
-		setIsExampleDropdownOpen((c) => !c)
-		if (isExampleDropdownOpen) {
-			setExpandedCategories({})
-		}
-	}
-
-	const handleCategoryToggle = (category: string) => {
-		setExpandedCategories((prev) => ({
-			...prev,
-			[category]: !prev[category],
-		}))
-	}
+	const handleExampleDropdownToggle = () => setIsExampleDropdownOpen((c) => !c)
 
 	const handleIcSelection = async (newIc: string) => {
-		icDropdownRef.current?.querySelector("button")?.blur() // 手動失焦解決 Tooltip 殘留問題
+		icDropdownRef.current?.querySelector("button")?.blur()
 		if (newIc && newIc !== amebaIcSelection) {
 			try {
 				await AmebaServiceClient.amebaUpdateChipSelection(StringRequest.create({ value: newIc }))
@@ -299,7 +344,7 @@ const AmebaServiceModal: React.FC = () => {
 	}
 
 	const handlePortSelection = async (selectedPortPath: string) => {
-		portDropdownRef.current?.querySelector("button")?.blur() // 手動失焦
+		portDropdownRef.current?.querySelector("button")?.blur()
 		if (selectedPortPath !== amebaSelectedSerialPort?.path) {
 			try {
 				await AmebaServiceClient.amebaUpdateSerialPort(StringRequest.create({ value: selectedPortPath }))
@@ -311,18 +356,17 @@ const AmebaServiceModal: React.FC = () => {
 	}
 
 	const handleExampleSelection = async (examplePath: string) => {
-		exampleDropdownRef.current?.querySelector("button")?.blur() // 手動失焦
-		if (examplePath && examplePath !== amebaSelectedExample?.path) {
-			try {
-				await AmebaServiceClient.amebaUpdateExample(StringRequest.create({ value: examplePath }))
-			} catch (error) {
-				console.error("Failed to update Ameba Example selection:", error)
-			}
+		exampleDropdownRef.current?.querySelector("button")?.blur()
+		// 即使是當前選中的範例，也允許再次發送請求，以應對後端狀態可能不一致的情況
+		try {
+			await AmebaServiceClient.amebaUpdateExample(StringRequest.create({ value: examplePath }))
+		} catch (error) {
+			console.error("Failed to update Ameba Example selection:", error)
 		}
 		setIsExampleDropdownOpen(false)
 	}
 
-	// --- 其他按鈕處理器 (無變更) ---
+	// --- 其他按鈕處理器 ---
 	const handleMenuConfigClick = async () => {
 		try {
 			await AmebaServiceClient.amebaMenuConfig(EmptyRequest.create())
@@ -360,17 +404,23 @@ const AmebaServiceModal: React.FC = () => {
 		}
 	}
 
-	// --- Tooltip 相關 (無變更) ---
+	// --- Tooltip 相關 ---
 	const getDisabledTooltipText = (): string => {
 		const sdkError = "Ameba SDK not found. Please open an SDK project folder or set the path manually."
 		const toolchainError = "Ameba Toolchain directory and Prebuilts check failed. Please verify the installation."
+
 		const errors: string[] = []
 		if (!amebaSdkRoot) {
 			errors.push(sdkError)
 		} else if (!amebaToolChainEnv) {
 			errors.push(toolchainError)
 		}
-		return errors.length === 0 ? "Ameba SDK environment is ready." : errors.join("\n")
+
+		if (errors.length === 0) {
+			return "Ameba SDK environment is ready."
+		}
+
+		return errors.join("\n")
 	}
 
 	const disabledTooltipText = getDisabledTooltipText()
@@ -384,6 +434,7 @@ const AmebaServiceModal: React.FC = () => {
 	}
 
 	const chipTooltipText = getChipTooltipText()
+
 	const chipTooltipStyle: React.CSSProperties = {
 		left: "0px",
 		zIndex: 1001,
@@ -391,15 +442,17 @@ const AmebaServiceModal: React.FC = () => {
 		whiteSpace: "pre-wrap",
 		textAlign: "left",
 	}
+
 	const dropdownTooltipStyle: React.CSSProperties = {
 		left: "50%",
 		transform: "translateX(-50%)",
 		zIndex: 1001,
 		whiteSpace: "nowrap",
 	}
+
 	const iconButtonTooltipStyle = isAmebaSdkReady ? undefined : chipTooltipStyle
 
-	// --- 渲染部分 (無變更) ---
+	// --- 渲染部分 ---
 	return (
 		<Container>
 			<ControlsRow>
@@ -448,31 +501,28 @@ const AmebaServiceModal: React.FC = () => {
 						</DropdownTriggerButton>
 
 						{isExampleDropdownOpen && (
-							<DropdownListbox style={{ minWidth: openExampleDropdownWidth }}>
-								{amebaExamples.length === 0 ? (
+							<DropdownListbox style={{ minWidth: exampleDropdownMinWidth }}>
+								{!amebaExamples || amebaExamples.length === 0 ? (
 									<DropdownOption style={{ cursor: "default", color: "var(--vscode-disabledForeground)" }}>
 										No example found
 									</DropdownOption>
 								) : (
-									exampleCategories.map((category) => (
-										<React.Fragment key={category}>
-											<CategoryHeader onClick={() => handleCategoryToggle(category)}>
-												{category}
-												<ChevronIcon
-													$isExpanded={!!expandedCategories[category]}
-													className="codicon codicon-chevron-right"
+									<>
+										<DropdownOption key="default-example" onClick={() => handleExampleSelection("")}>
+											None
+										</DropdownOption>
+										{Object.entries(exampleTree)
+											.sort(([a], [b]) => a.localeCompare(b))
+											.map(([name, node]) => (
+												<RecursiveExampleNode
+													key={name}
+													level={0}
+													name={name}
+													node={node}
+													onSelect={handleExampleSelection}
 												/>
-											</CategoryHeader>
-											{expandedCategories[category] &&
-												groupedExamples[category].map((example) => (
-													<ExampleDropdownOption
-														key={example.path}
-														onClick={() => handleExampleSelection(example.path)}>
-														{example.name}
-													</ExampleDropdownOption>
-												))}
-										</React.Fragment>
-									))
+											))}
+									</>
 								)}
 							</DropdownListbox>
 						)}
@@ -519,7 +569,6 @@ const AmebaServiceModal: React.FC = () => {
 							<span className="codicon codicon-checklist" />
 						</VSCodeButton>
 					</Tooltip>
-
 					<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Build" : disabledTooltipText}>
 						<VSCodeButton
 							appearance="icon"
@@ -529,7 +578,6 @@ const AmebaServiceModal: React.FC = () => {
 							<span className="codicon codicon-tools" />
 						</VSCodeButton>
 					</Tooltip>
-
 					<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Flash" : disabledTooltipText}>
 						<VSCodeButton
 							appearance="icon"
@@ -539,7 +587,6 @@ const AmebaServiceModal: React.FC = () => {
 							<span className="codicon codicon-symbol-event" />
 						</VSCodeButton>
 					</Tooltip>
-
 					<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Monitor" : disabledTooltipText}>
 						<VSCodeButton
 							appearance="icon"
@@ -549,7 +596,6 @@ const AmebaServiceModal: React.FC = () => {
 							<span className="codicon codicon-vm" />
 						</VSCodeButton>
 					</Tooltip>
-
 					<Tooltip tipText="Ameba Documents">
 						<VSCodeButton appearance="icon" aria-label="Ameba Doc" onClick={handleOpenDocsClick}>
 							<span className="codicon codicon-book" />

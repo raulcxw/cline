@@ -58,7 +58,7 @@ export class AmebaEnvManager {
 		if (foundSdkPath) {
 			const version = await this.parseAmebaRtosVersion(foundSdkPath)
 			const variants = await this.getAmebaIcVariantsFromSdk(foundSdkPath)
-			const examples = await this.parseAmebaExamples(foundSdkPath)
+			const examples = await this.parseAmebaExamplesRecursively(foundSdkPath)
 			await this.controller.setAmebaSdkVersion(version)
 			await this.controller.setAmebaIcVariants(variants)
 			await this.controller.setAmebaExamples(examples)
@@ -635,7 +635,7 @@ export class AmebaEnvManager {
 		})
 	}
 
-	private async parseAmebaExamples(sdkRoot: string): Promise<AmebaExample[]> {
+	private async parseAmebaExamplesRecursively(sdkRoot: string): Promise<AmebaExample[]> {
 		const examplesBasePath = path.join(sdkRoot, "component", "example")
 		const collectedExamples: AmebaExample[] = []
 
@@ -644,38 +644,43 @@ export class AmebaEnvManager {
 			return []
 		}
 
+		// 遞迴輔助函式
+		const findExamples = async (currentDir: string, relativePathParts: string[]): Promise<void> => {
+			// 檢查當前目錄是否是一個可編譯的範例（包含 CMakeLists.txt）
+			const isExample = await fileExistsAtPath(path.join(currentDir, "CMakeLists.txt"))
+			if (isExample) {
+				const examplePath = relativePathParts.join("/")
+				collectedExamples.push({
+					// name 是路徑的最後一部分
+					name: relativePathParts[relativePathParts.length - 1],
+					// path 是完整的相對路徑，用於編譯
+					path: examplePath,
+					// category 是路徑中除最後一部分外的所有部分，用於 UI 分組
+					category: relativePathParts.slice(0, -1).join("/"),
+				})
+			}
+
+			// 繼續掃描子目錄，尋找更多範例或分類
+			try {
+				const entries = await fs.readdir(currentDir, { withFileTypes: true })
+				for (const entry of entries) {
+					if (entry.isDirectory()) {
+						const newPath = path.join(currentDir, entry.name)
+						const newRelativePathParts = [...relativePathParts, entry.name]
+						await findExamples(newPath, newRelativePathParts)
+					}
+				}
+			} catch (error) {
+				console.error(`[Ameba SDK] Error reading directory ${currentDir}:`, error)
+			}
+		}
+
+		// 從 component/example 目錄開始掃描
 		try {
 			const topLevelEntries = await fs.readdir(examplesBasePath, { withFileTypes: true })
-
 			for (const entry of topLevelEntries) {
-				if (!entry.isDirectory()) continue
-
-				const categoryPath = path.join(examplesBasePath, entry.name)
-
-				// 啟發式規則：如果一個目錄下直接包含 Makefile，我們視其為一個可編譯的範例。
-				const isFirstLevelExample = await fileExistsAtPath(path.join(categoryPath, "CMakeLists.txt"))
-
-				if (isFirstLevelExample) {
-					// 這是一個一級範例 (例如：component/example/ota)
-					collectedExamples.push({
-						name: entry.name,
-						path: entry.name, // 相對路徑就是目錄名本身
-					})
-				} else {
-					// 這可能是一個分類目錄 (例如：component/example/audio)
-					// 我們需要查看它的二級子目錄
-					const subLevelEntries = await fs.readdir(categoryPath, { withFileTypes: true })
-					for (const subEntry of subLevelEntries) {
-						if (subEntry.isDirectory()) {
-							// 假設分類目錄下的所有子目錄都是範例
-							collectedExamples.push({
-								name: subEntry.name,
-								category: entry.name, // 父目錄作為分類
-								// 產生用於編譯的路徑，例如 "audio/mp3"，並確保使用正斜線
-								path: path.join(entry.name, subEntry.name).replace(/\\/g, "/"),
-							})
-						}
-					}
+				if (entry.isDirectory()) {
+					await findExamples(path.join(examplesBasePath, entry.name), [entry.name])
 				}
 			}
 		} catch (error) {
@@ -683,14 +688,9 @@ export class AmebaEnvManager {
 			return [] // 出錯時回傳空陣列
 		}
 
-		// 按照分類和名稱排序，方便 UI 顯示
-		return collectedExamples.sort((a, b) => {
-			const categoryA = a.category || ""
-			const categoryB = b.category || ""
-			if (categoryA !== categoryB) {
-				return categoryA.localeCompare(categoryB)
-			}
-			return a.name.localeCompare(b.name)
-		})
+		console.log(`[Ameba SDK] Found ${collectedExamples.length} examples.`)
+
+		// 按照完整的相對路徑排序，確保 UI 顯示順序穩定
+		return collectedExamples.sort((a, b) => a.path.localeCompare(b.path))
 	}
 }

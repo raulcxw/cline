@@ -2,7 +2,7 @@
 	"name": "cline-ameba",
 	"displayName": "Cline x Ameba",
 	"description": "Extended cline v3.26.5 to support the Realtek Ameba SoC SDK, enabling project setup, menuconfig, build, flash and monitor operations.",
-	"version": "1.0.4",
+	"version": "1.0.5",
 	"icon": "assets/icons/icon_ameba.png",
 	"engines": {
 		"vscode": "^1.84.0"
