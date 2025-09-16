@@ -895,7 +895,7 @@ export class Controller {
 		// 將找到的物件或 undefined 儲存到狀態中
 		this.cacheService.setGlobalState("amebaSelectedExample", selectedExample)
 
-		console.log(`[Controller] Ameba Example selection updated to:`, selectedExample)
+		console.log(`[Controller] Ameba Example selection updated to: `, selectedExample)
 		await this.postStateToWebview()
 	}
 	/* realtek ameba add end*/

@@ -218,6 +218,20 @@ const RecursiveExampleNode: React.FC<{
 	)
 }
 
+const MaybeTooltip: React.FC<{
+	disabled: boolean
+	tipText: string
+	style?: React.CSSProperties
+	children: React.ReactNode
+}> = ({ disabled, tipText, style, children }) => {
+	if (disabled) return <>{children}</>
+	return (
+		<Tooltip style={style} tipText={tipText}>
+			{children}
+		</Tooltip>
+	)
+}
+
 const AmebaServiceModal: React.FC = () => {
 	const {
 		amebaSdkRoot,
@@ -467,7 +481,8 @@ const AmebaServiceModal: React.FC = () => {
 						}}></span>
 				</Tooltip>
 
-				<Tooltip
+				<MaybeTooltip
+					disabled={isAmebaSdkReady && isIcDropdownOpen}
 					style={isAmebaSdkReady ? dropdownTooltipStyle : chipTooltipStyle}
 					tipText={isAmebaSdkReady ? "Select Chip" : disabledTooltipText}>
 					<CustomDropdownContainer ref={icDropdownRef}>
@@ -487,9 +502,10 @@ const AmebaServiceModal: React.FC = () => {
 							</DropdownListbox>
 						)}
 					</CustomDropdownContainer>
-				</Tooltip>
+				</MaybeTooltip>
 
-				<Tooltip
+				<MaybeTooltip
+					disabled={isAmebaSdkReady && isExampleDropdownOpen}
 					style={isAmebaSdkReady ? dropdownTooltipStyle : chipTooltipStyle}
 					tipText={isAmebaSdkReady ? "Select Example" : disabledTooltipText}>
 					<CustomDropdownContainer ref={exampleDropdownRef}>
@@ -527,11 +543,12 @@ const AmebaServiceModal: React.FC = () => {
 							</DropdownListbox>
 						)}
 					</CustomDropdownContainer>
-				</Tooltip>
+				</MaybeTooltip>
 			</ControlsRow>
 
 			<SecondControlsRow>
-				<Tooltip
+				<MaybeTooltip
+					disabled={isAmebaSdkReady && isPortDropdownOpen}
 					style={isAmebaSdkReady ? dropdownTooltipStyle : chipTooltipStyle}
 					tipText={isAmebaSdkReady ? "Select Serial Port" : disabledTooltipText}>
 					<CustomDropdownContainer ref={portDropdownRef}>
@@ -557,7 +574,7 @@ const AmebaServiceModal: React.FC = () => {
 							</DropdownListbox>
 						)}
 					</CustomDropdownContainer>
-				</Tooltip>
+				</MaybeTooltip>
 
 				<ButtonGroup>
 					<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Menuconfig" : disabledTooltipText}>
