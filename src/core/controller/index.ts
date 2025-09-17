@@ -746,10 +746,10 @@ export class Controller {
 		const currentSdkRoot = await this.getAmebaSdkRoot()
 		if (!sdkRoot) {
 			console.log(`[Controller] Ameba SDK root undefine updated to: ${sdkRoot}`)
-			HostProvider.window.showMessage({
-				type: ShowMessageType.WARNING,
-				message: "Ameba SDK Search Failed, please open Ameba SDK Folder.",
-			})
+			//HostProvider.window.showMessage({
+			//	type: ShowMessageType.WARNING,
+			//	message: "Ameba SDK Search Failed, please open Ameba SDK Folder.",
+			//})
 		}
 
 		if (sdkRoot !== currentSdkRoot) {
@@ -768,8 +768,6 @@ export class Controller {
 	public async setAmebaExamples(examples: AmebaExample[]): Promise<void> {
 		this.cacheService.setGlobalState("amebaExamples", examples)
 		console.log(`[Controller] Ameba examples updated with ${examples.length} items.`)
-		// 注意：這裡不需要單獨呼叫 postStateToWebview，
-		// 因為 AmebaEnvManager 在完成所有設定後會統一呼叫一次。
 	}
 
 	public async setAmebaIcSelection(icSelection: string | undefined): Promise<void> {

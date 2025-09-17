@@ -68,10 +68,10 @@ export class AmebaEnvManager {
 			await this.controller.setAmebaSdkVersion(undefined)
 			await this.controller.setAmebaIcVariants([])
 			await this.controller.setAmebaExamples([])
-			HostProvider.window.showMessage({
-				type: ShowMessageType.WARNING,
-				message: "Ameba SDK not found in the workspace. Please open an Ameba SDK project or set the path manually.",
-			})
+			//HostProvider.window.showMessage({
+			//	type: ShowMessageType.WARNING,
+			//	message: "Ameba SDK not found in the workspace. Please open an Ameba SDK project or set the path manually.",
+			//})
 		}
 		await this.controller.postStateToWebview()
 	}

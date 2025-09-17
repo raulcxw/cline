@@ -50,7 +50,7 @@ export async function getContextForCommand(
 }
 
 export async function focusChatInput(): Promise<WebviewProvider | undefined> {
-	await vscode.commands.executeCommand("cline-ameba.focusChatInput")
+	await vscode.commands.executeCommand("ameba.focusChatInput")
 
 	// Wait for a webview instance to become available after focusing
 	await pWaitFor(() => !!WebviewProvider.getLastActiveInstance())

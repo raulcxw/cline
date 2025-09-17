@@ -18,8 +18,8 @@ https://github.com/KumarVariable/vscode-extension-sidebar-html/blob/master/src/c
 export class VscodeWebviewProvider extends WebviewProvider implements vscode.WebviewViewProvider {
 	// Used in package.json as the view's id. This value cannot be changed due to how vscode caches
 	// views based on their id, and updating the id would break existing instances of the extension.
-	public static readonly SIDEBAR_ID = "cline-ameba.SidebarProvider"
-	public static readonly TAB_PANEL_ID = "cline-ameba.TabPanelProvider"
+	public static readonly SIDEBAR_ID = "ameba.SidebarProvider"
+	public static readonly TAB_PANEL_ID = "ameba.TabPanelProvider"
 
 	private webview?: vscode.WebviewView | vscode.WebviewPanel
 	private disposables: vscode.Disposable[] = []
@@ -137,7 +137,7 @@ export class VscodeWebviewProvider extends WebviewProvider implements vscode.Web
 						await sendThemeEvent(JSON.stringify(theme))
 					}
 				}
-				if (e && e.affectsConfiguration("cline-ameba.mcpMarketplace.enabled")) {
+				if (e && e.affectsConfiguration("ameba.mcpMarketplace.enabled")) {
 					// Update state when marketplace tab setting changes
 					await this.controller.postStateToWebview()
 				}

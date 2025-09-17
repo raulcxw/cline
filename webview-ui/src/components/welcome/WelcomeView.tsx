@@ -37,15 +37,9 @@ const WelcomeView = memo(() => {
 		<div className="fixed inset-0 p-0 flex flex-col">
 			<div className="h-full px-5 overflow-auto">
 				{/* realtek ameba add start*/}
-				<h2>Hi, I'm Cline x Ameba</h2>
+				<h2>Hi, I'm Ameba</h2>
 				<div className="flex justify-center my-5 items-center gap-x-4">
-					<ClineLogoWhite className="size-16" />
-					<span
-						className="text-5xl font-light"
-						style={{ color: "var(--vscode-disabledForeground)", transform: "translateY(0px)" }}>
-						&times;
-					</span>
-					<RtkLogoVariable className="size-20" style={{ transform: "translateY(2px)" }} />
+					<RtkLogoVariable className="size-24" style={{ transform: "translateY(2px)" }} />
 				</div>
 				{/* realtek ameba add end*/}
 				<p>

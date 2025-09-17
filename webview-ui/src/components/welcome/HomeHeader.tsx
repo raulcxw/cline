@@ -24,15 +24,6 @@ const HomeHeader = ({ shouldShowQuickWins = false }: HomeHeaderProps) => {
 		<div className="flex flex-col items-center mb-5">
 			{/* realtek ameba add start*/}
 			<div className="my-5 flex items-center justify-center gap-4">
-				<ClineLogoVariable style={{ height: "42px", width: "auto" }} />
-
-				{/* 3. 在兩個 Logo 之間加入一個分隔符 */}
-				<span
-					className="text-3xl font-light"
-					style={{ color: "var(--vscode-disabledForeground)", transform: "translateY(-2px)" }}>
-					&times;
-				</span>
-
 				{/* 4. 加入 RTK Logo 並調整其大小以求視覺平衡 */}
 				<RtkLogoVariable style={{ height: "42px", width: "auto" }} />
 			</div>
