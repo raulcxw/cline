@@ -12,7 +12,7 @@ English | <a href="https://github.com/cline/cline/blob/main/locales/es/README.md
 <table>
 <tbody>
 <td align="center">
-<a href="https://marketplace.visualstudio.com/items?itemName=Realtek.cline-ameba" target="_blank"><strong>Download on VS Marketplace</strong></a>
+<a href="https://marketplace.visualstudio.com/items?itemName=Realtek.ameba" target="_blank"><strong>Download on VS Marketplace</strong></a>
 </td>
 <td align="center">
 <a href="https://discord.gg/cline" target="_blank"><strong>Discord</strong></a>

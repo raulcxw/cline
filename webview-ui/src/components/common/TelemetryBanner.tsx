@@ -71,7 +71,7 @@ const TelemetryBanner = () => {
 				✕
 			</CloseButton>
 			<div>
-				<strong>Help Improve Cline</strong>
+				<strong>Help Improve Ameba</strong>
 				<i>
 					<br />
 					(and access experimental features)
