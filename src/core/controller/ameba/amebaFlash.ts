@@ -313,6 +313,7 @@ export async function amebaFlash(controller: Controller, _request: EmptyRequest)
 		const imageTypeToFileName = new Map<string, string>([
 			["IMG_BOOT", bootImageName],
 			["IMG_APP_OTA1", appImageName],
+			["VFS1", "vfs.bin"],
 		])
 
 		const effectivePort = serialPort.isRemote ? path.basename(serialPort.path) : serialPort.path
@@ -330,23 +331,34 @@ export async function amebaFlash(controller: Controller, _request: EmptyRequest)
 
 			if (imageFileName) {
 				const imagePath = path.join(flashDir, imageFileName)
-				if (!(await fileExists(imagePath))) {
-					HostProvider.window.showMessage({
-						type: ShowMessageType.ERROR,
-						message: `Flash image not found: ${imagePath}. Please build the project first.`,
-					})
-					return Empty.create({})
-				}
-
-				try {
-					const endAddrNum = parseInt(currentRegion.endAddr, 16)
-					const commandEndAddr = `0x${(endAddrNum + 1).toString(16).toUpperCase()}`
-					commandParts.push("--image", imageFileName, currentRegion.startAddr, commandEndAddr)
-				} catch (e) {
-					console.error(
-						`Could not calculate end address for ${currentRegion.type} (line ${currentRegion.lineNumber}):`,
-						e,
-					)
+				if (await fileExists(imagePath)) {
+					// 文件存在：计算endAddr并添加到烧录命令
+					try {
+						const endAddrNum = parseInt(currentRegion.endAddr, 16)
+						const commandEndAddr = `0x${(endAddrNum + 1).toString(16).toUpperCase()}`
+						commandParts.push("--image", imageFileName, currentRegion.startAddr, commandEndAddr)
+						console.log(
+							`Added ${currentRegion.type} firmware to flash command: ${imageFileName} (${currentRegion.startAddr} - ${commandEndAddr})`,
+						)
+					} catch (e) {
+						console.error(
+							`Could not calculate end address for ${currentRegion.type} (line ${currentRegion.lineNumber}):`,
+							e,
+						)
+					}
+				} else {
+					// 文件不存在：判断是否为VFS1
+					if (currentRegion.type === "VFS1") {
+						// VFS1未找到：仅日志提示，不阻断流程
+						console.log(`VFS1 firmware not found at ${imagePath}, skipping VFS1 flash step.`)
+					} else {
+						// 其他核心固件未找到：报错并终止
+						HostProvider.window.showMessage({
+							type: ShowMessageType.ERROR,
+							message: `Flash image not found: ${imagePath}. Please build the project first.`,
+						})
+						return Empty.create({})
+					}
 				}
 			}
 		}
