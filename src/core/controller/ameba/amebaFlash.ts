@@ -280,6 +280,20 @@ export async function amebaFlash(controller: Controller, _request: EmptyRequest)
 			return Empty.create({})
 		}
 
+		let bootImageName: string
+		if (icSelection == "amebagreen2") {
+			bootImageName = "amebagreen2_boot.bin"
+			console.log(`Amebageen2 boot name`)
+		} else if (icSelection == "amebaL2") {
+			bootImageName = "amebaL2_boot.bin"
+			console.log(`Ameba L2 boot name`)
+		} else if (icSelection == "RTL8720F") {
+			bootImageName = "RTL8720F_boot.bin"
+			console.log(`Ameba RTL8720F boot name`)
+		} else {
+			bootImageName = "km4_boot_all.bin"
+		}
+
 		// 4. 获取app固件名
 		let appImageName: string
 		try {
@@ -297,7 +311,7 @@ export async function amebaFlash(controller: Controller, _request: EmptyRequest)
 
 		// 6. 获取烧录的固件和offset
 		const imageTypeToFileName = new Map<string, string>([
-			["IMG_BOOT", "km4_boot_all.bin"],
+			["IMG_BOOT", bootImageName],
 			["IMG_APP_OTA1", appImageName],
 		])
 

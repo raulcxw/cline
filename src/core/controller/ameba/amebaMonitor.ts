@@ -46,7 +46,14 @@ export async function amebaMonitor(controller: Controller, _request: EmptyReques
 		// 4. Define the build command.
 		const effectivePort = serialPort.isRemote ? path.basename(serialPort.path) : serialPort.path
 
-		const commandParts: string[] = ["python", "monitor.py", "-b 1500000", "--port", effectivePort, "-reset"]
+		let baudrate: string
+		if (icSelection == "amebad") {
+			baudrate = "-b 115200"
+		} else {
+			baudrate = "-b 1500000"
+		}
+
+		const commandParts: string[] = ["python", "monitor.py", "-b 1500000", "--port", effectivePort, "-reset "]
 
 		if (serialPort.isRemote) {
 			const remoteHost = serialPort.host
