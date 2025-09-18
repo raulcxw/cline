@@ -2,6 +2,20 @@
 English | <a href="https://github.com/cline/cline/blob/main/locales/es/README.md" target="_blank">Español</a> | <a href="https://github.com/cline/cline/blob/main/locales/de/README.md" target="_blank">Deutsch</a> | <a href="https://github.com/cline/cline/blob/main/locales/ja/README.md" target="_blank">日本語</a> | <a href="https://github.com/cline/cline/blob/main/locales/zh-cn/README.md" target="_blank">简体中文</a> | <a href="https://github.com/cline/cline/blob/main/locales/zh-tw/README.md" target="_blank">繁體中文</a> | <a href="https://github.com/cline/cline/blob/main/locales/ko/README.md" target="_blank">한국어</a>
 </sub></div>
 
+## Introduction to Ameba Customized Features
+
+This extension adds exclusive development features for the Realtek Ameba series IC, including:
+
+*   **Environment Check and Auto-installation**: Environment check and one-click installation for the Realtek Ameba series IC RTOS SDK.
+*   **Menuconfig**: Graphical interface for Menu configuration.
+*   **Compilation**: Support for project compilation.
+*   **Flashing**: Support for local and remote firmware flashing.
+*   **Serial Monitor**: Support for local and remote serial port monitoring.
+
+For complete instructions, please refer to our official documentation:
+[Ameba VS Code Extension Documentation](https://aiot.realmcu.com/docs/en/latest/rst_vscode/index_vscode.html)
+
+
 # Cline – \#1 on OpenRouter
 
 <p align="center">

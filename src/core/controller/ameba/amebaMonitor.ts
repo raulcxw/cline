@@ -44,33 +44,32 @@ export async function amebaMonitor(controller: Controller, _request: EmptyReques
 		const monitorDir = path.join(sdkRoot, monitorProjectDirName)
 
 		// 4. Define the build command.
-		const monitorScript = `python monitor.py -p ${serialPort.path} -b 1500000 -reset`
+		const effectivePort = serialPort.isRemote ? path.basename(serialPort.path) : serialPort.path
+
+		const commandParts: string[] = ["python", "monitor.py", "-b 1500000", "--port", effectivePort, "-reset"]
+
+		if (serialPort.isRemote) {
+			const remoteHost = serialPort.host
+			const remotePort = 58916
+			commandParts.push("--remote-server", remoteHost, "--remote-port", String(remotePort))
+		}
+
+		const monitorCommand = commandParts.join(" ")
 
 		// 5. Get a dedicated terminal for Ameba tasks.
-		// The terminal's initial CWD is set to the SDK root for consistency.
 		const terminalManager = controller.amebaTerminalManager
 		const terminalInfo = await terminalManager.getOrCreateAmebaTerminal(sdkRoot)
-
 		if (!terminalInfo) {
-			HostProvider.window.showMessage({
-				type: ShowMessageType.ERROR,
-				message: "Failed to create or find the Ameba terminal.",
-			})
-			console.error("amebaMonitor: terminalInfo is undefined. Aborting build.")
+			HostProvider.window.showMessage({ type: ShowMessageType.ERROR, message: "Failed to create Ameba terminal." })
 			return Empty.create({})
 		}
 
 		// 6. Show the terminal and execute the commands.
 		terminalInfo.terminal.show()
-
-		// Command 1: Change directory to the specific project folder.
-		// Quoting "${buildDir}" handles potential spaces in the file path.
 		terminalInfo.terminal.sendText(`cd "${monitorDir}"`, true)
 		console.log(`amebaMonitor to terminal: cd "${monitorDir}"`)
-
-		// Command 2: Execute the build script in that directory.
-		terminalInfo.terminal.sendText(monitorScript, true)
-		console.log(`amebaMonitor to terminal: ${monitorScript}`)
+		terminalInfo.terminal.sendText(monitorCommand, true)
+		console.log(`amebaMonitor to terminal: ${monitorCommand}`)
 
 		return Empty.create({})
 	} catch (error) {
