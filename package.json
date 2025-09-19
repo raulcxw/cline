@@ -213,7 +213,7 @@
 			},
 			{
 				"command": "ameba.manageRemoteServers",
-				"title": "Manage Remote Servers",
+				"title": "Remote Servers",
 				"category": "Ameba"
 			},
 			{

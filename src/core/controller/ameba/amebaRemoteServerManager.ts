@@ -74,7 +74,7 @@ export class AmebaRemoteServerManager {
 
 		const hostResult = await HostProvider.window.showInputBox({
 			title: "Server IP",
-			prompt: "Enter the server's IP address or hostname",
+			prompt: "Enter the server's IP address",
 		})
 
 		const host = hostResult.response?.trim()
@@ -82,11 +82,22 @@ export class AmebaRemoteServerManager {
 			return
 		}
 
+		const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/
+		if (!ipv4Regex.test(host)) {
+			HostProvider.window.showMessage({
+				type: ShowMessageType.ERROR,
+				message: "Please enter a valid IPv4 address (e.g., 192.168.1.1).",
+			})
+			return
+		}
+		/*
 		const portResult = await HostProvider.window.showInputBox({
 			title: "Server Port",
 			prompt: "Enter the server's port number",
 			value: "58916",
 		})
+
+
 
 		const portStr = portResult.response?.trim()
 		if (!portStr) {
@@ -101,6 +112,16 @@ export class AmebaRemoteServerManager {
 			})
 			return
 		}
+		*/
+
+		const pwResult = await HostProvider.window.showInputBox({
+			title: "Password",
+			prompt: "Enter the server's password",
+		})
+
+		console.log(`Remote server pw ${pwResult.response}`)
+
+		const port = 58916
 
 		const newServer: AmebaRemoteServer = { name, host, port }
 		await this.controller.saveAmebaRemoteServers([...currentServers, newServer])
