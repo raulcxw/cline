@@ -22,7 +22,25 @@ const ControlsRow = styled.div`
 	font-size: 12px;
 	color: var(--vscode-descriptionForeground);
 `
-// 移除了 SecondControlsRow，因為不再需要特殊對齊
+
+const AlignerButton = styled.div`
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
+	width: calc(1em + 12px); /* 模擬 VSCodeButton 的寬度 */
+	height: calc(1.5em + 10px); /* 模擬 VSCodeButton 的高度 */
+	padding: 0px; /* 模擬 VSCodeButton 的內邊距 */
+	background: transparent;
+	border: none;
+	cursor: default; /* 保持預設游標 */
+	pointer-events: none; /* 不回應滑鼠事件 */
+
+	/* 確保內部的圖示垂直居中 */
+	& > .codicon {
+		vertical-align: middle;
+	}
+`
 
 const ButtonGroup = styled.div`
 	display: flex;
@@ -41,7 +59,7 @@ const DropdownTriggerButton = styled.button`
 	border: 1px solid var(--vscode-dropdown-border);
 	border-radius: 3px;
 	color: var(--vscode-descriptionForeground);
-	font-size: 12px;
+	font-size: 13px;
 	font-family: var(--vscode-font-family);
 	text-align: center;
 	padding: 2px 4px;
@@ -478,14 +496,16 @@ const AmebaServiceModal: React.FC = () => {
 		<Container>
 			<ControlsRow>
 				<Tooltip style={chipTooltipStyle} tipText={chipTooltipText}>
-					<span
-						className="codicon codicon-chip"
-						style={{
-							fontSize: "16px",
-							verticalAlign: "middle",
-							cursor: "default",
-							color: isAmebaSdkReady ? "var(--vscode-textLink-foreground)" : "var(--vscode-disabledForeground)",
-						}}></span>
+					<AlignerButton>
+						<span
+							className="codicon codicon-chip"
+							style={{
+								fontSize: "16px",
+								verticalAlign: "middle",
+								cursor: "default",
+								color: isAmebaSdkReady ? "var(--vscode-textLink-foreground)" : "var(--vscode-disabledForeground)",
+							}}></span>
+					</AlignerButton>
 				</Tooltip>
 
 				<MaybeTooltip
