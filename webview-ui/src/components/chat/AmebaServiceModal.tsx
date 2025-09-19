@@ -22,9 +22,8 @@ const ControlsRow = styled.div`
 	font-size: 12px;
 	color: var(--vscode-descriptionForeground);
 `
-const SecondControlsRow = styled(ControlsRow)`
-	padding-left: 38px; /* 根據第一行圖標和間距調整，使其對齊 */
-`
+// 移除了 SecondControlsRow，因為不再需要特殊對齊
+
 const ButtonGroup = styled.div`
 	display: flex;
 	align-items: center;
@@ -505,6 +504,35 @@ const AmebaServiceModal: React.FC = () => {
 				</MaybeTooltip>
 
 				<MaybeTooltip
+					disabled={isAmebaSdkReady && isPortDropdownOpen}
+					style={isAmebaSdkReady ? dropdownTooltipStyle : chipTooltipStyle}
+					tipText={isAmebaSdkReady ? "Select Serial Port" : disabledTooltipText}>
+					<CustomDropdownContainer ref={portDropdownRef}>
+						<DropdownTriggerButton
+							disabled={!isAmebaSdkReady}
+							onClick={handlePortDropdownToggle}
+							style={{ minWidth: portButtonWidth }}>
+							{amebaSelectedSerialPort?.path || "Select Port"}
+						</DropdownTriggerButton>
+						{isPortDropdownOpen && (
+							<DropdownListbox style={{ minWidth: longestPortWidth }}>
+								{amebaSerialPorts.length === 0 ? (
+									<DropdownOption style={{ cursor: "default", color: "var(--vscode-disabledForeground)" }}>
+										No port found
+									</DropdownOption>
+								) : (
+									amebaSerialPorts.map((port) => (
+										<DropdownOption key={port.path} onClick={() => handlePortSelection(port.path)}>
+											{port.path}
+										</DropdownOption>
+									))
+								)}
+							</DropdownListbox>
+						)}
+					</CustomDropdownContainer>
+				</MaybeTooltip>
+
+				<MaybeTooltip
 					disabled={isAmebaSdkReady && isExampleDropdownOpen}
 					style={isAmebaSdkReady ? dropdownTooltipStyle : chipTooltipStyle}
 					tipText={isAmebaSdkReady ? "Select Example" : disabledTooltipText}>
@@ -546,36 +574,7 @@ const AmebaServiceModal: React.FC = () => {
 				</MaybeTooltip>
 			</ControlsRow>
 
-			<SecondControlsRow>
-				<MaybeTooltip
-					disabled={isAmebaSdkReady && isPortDropdownOpen}
-					style={isAmebaSdkReady ? dropdownTooltipStyle : chipTooltipStyle}
-					tipText={isAmebaSdkReady ? "Select Serial Port" : disabledTooltipText}>
-					<CustomDropdownContainer ref={portDropdownRef}>
-						<DropdownTriggerButton
-							disabled={!isAmebaSdkReady}
-							onClick={handlePortDropdownToggle}
-							style={{ minWidth: portButtonWidth }}>
-							{amebaSelectedSerialPort?.path || "Select Port"}
-						</DropdownTriggerButton>
-						{isPortDropdownOpen && (
-							<DropdownListbox style={{ minWidth: longestPortWidth }}>
-								{amebaSerialPorts.length === 0 ? (
-									<DropdownOption style={{ cursor: "default", color: "var(--vscode-disabledForeground)" }}>
-										No port found
-									</DropdownOption>
-								) : (
-									amebaSerialPorts.map((port) => (
-										<DropdownOption key={port.path} onClick={() => handlePortSelection(port.path)}>
-											{port.path}
-										</DropdownOption>
-									))
-								)}
-							</DropdownListbox>
-						)}
-					</CustomDropdownContainer>
-				</MaybeTooltip>
-
+			<ControlsRow>
 				<ButtonGroup>
 					<Tooltip style={iconButtonTooltipStyle} tipText={isAmebaSdkReady ? "Ameba Menuconfig" : disabledTooltipText}>
 						<VSCodeButton
@@ -619,7 +618,7 @@ const AmebaServiceModal: React.FC = () => {
 						</VSCodeButton>
 					</Tooltip>
 				</ButtonGroup>
-			</SecondControlsRow>
+			</ControlsRow>
 		</Container>
 	)
 }
