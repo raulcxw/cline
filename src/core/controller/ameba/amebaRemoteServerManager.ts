@@ -72,6 +72,14 @@ export class AmebaRemoteServerManager {
 			return
 		}
 
+		if (currentServers.some((server) => server.name === name)) {
+			HostProvider.window.showMessage({
+				type: ShowMessageType.ERROR,
+				message: `A server with the name "${name}" already exists. Please use a different name.`,
+			})
+			return
+		}
+
 		const hostResult = await HostProvider.window.showInputBox({
 			title: "Server IP",
 			prompt: "Enter the server's IP address",
@@ -79,6 +87,14 @@ export class AmebaRemoteServerManager {
 
 		const host = hostResult.response?.trim()
 		if (!host) {
+			return
+		}
+
+		if (currentServers.some((server) => server.host === host)) {
+			HostProvider.window.showMessage({
+				type: ShowMessageType.ERROR,
+				message: `A server with the IP address "${host}" already exists.`,
+			})
 			return
 		}
 
@@ -90,29 +106,6 @@ export class AmebaRemoteServerManager {
 			})
 			return
 		}
-		/*
-		const portResult = await HostProvider.window.showInputBox({
-			title: "Server Port",
-			prompt: "Enter the server's port number",
-			value: "58916",
-		})
-
-
-
-		const portStr = portResult.response?.trim()
-		if (!portStr) {
-			return
-		}
-
-		const port = Number(portStr)
-		if (Number.isNaN(port) || port <= 0 || port >= 65536) {
-			HostProvider.window.showMessage({
-				type: ShowMessageType.ERROR,
-				message: "Please enter a valid port number (1-65535).",
-			})
-			return
-		}
-		*/
 
 		const pwResult = await HostProvider.window.showInputBox({
 			title: "Password",
