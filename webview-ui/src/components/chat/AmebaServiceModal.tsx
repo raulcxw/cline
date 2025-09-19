@@ -419,7 +419,7 @@ const AmebaServiceModal: React.FC = () => {
 
 	// --- Tooltip 相關 ---
 	const getDisabledTooltipText = (): string => {
-		const sdkError = "Ameba SDK not found. Please open an SDK project folder or set the path manually."
+		const sdkError = "Ameba SDK not found. Please open an SDK project folder."
 		const toolchainError = "Ameba Toolchain directory and Prebuilts check failed. Please verify the installation."
 
 		const errors: string[] = []
@@ -456,6 +456,14 @@ const AmebaServiceModal: React.FC = () => {
 		textAlign: "left",
 	}
 
+	const buttonTooltipStyle: React.CSSProperties = {
+		left: "0px",
+		zIndex: 1001,
+		minWidth: "50px",
+		whiteSpace: "pre-wrap",
+		textAlign: "left",
+	}
+
 	const dropdownTooltipStyle: React.CSSProperties = {
 		left: "50%",
 		transform: "translateX(-50%)",
@@ -463,7 +471,7 @@ const AmebaServiceModal: React.FC = () => {
 		whiteSpace: "nowrap",
 	}
 
-	const iconButtonTooltipStyle = isAmebaSdkReady ? undefined : chipTooltipStyle
+	const iconButtonTooltipStyle = isAmebaSdkReady ? buttonTooltipStyle : chipTooltipStyle
 
 	// --- 渲染部分 ---
 	return (

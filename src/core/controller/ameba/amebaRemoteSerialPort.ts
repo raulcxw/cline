@@ -1,9 +1,23 @@
 import * as net from "node:net"
+import * as os from "node:os"
 import { AmebaRemoteServer, RemotePortInfo } from "@/shared/amebaInfo"
 
 export type ServerConfigs = AmebaRemoteServer[]
 
 export type TcpMessage = { type: "com_ports_update"; ports: string[] } | { type: "list_com_ports" }
+
+function getLocalIpAddresses(): Set<string> {
+	const networkInterfaces = os.networkInterfaces()
+	const allAddresses = Object.values(networkInterfaces).flat()
+
+	const ipv4Addresses = allAddresses
+		.filter((details) => details && details.family === "IPv4" && !details.internal)
+		.map((details) => details!.address)
+
+	// 也包含本地回環地址，以防萬一
+	ipv4Addresses.push("127.0.0.1")
+	return new Set(ipv4Addresses)
+}
 
 export class AmebaRemoteSerialPort {
 	private servers: ServerConfigs = []
@@ -21,7 +35,17 @@ export class AmebaRemoteSerialPort {
 
 	// [新增] 這是現在與外部溝通的主要方式
 	public updateServerList(newServers: ServerConfigs): void {
-		const newServerHosts = new Set(newServers.map((s) => s.host))
+		const localIps = getLocalIpAddresses()
+		const newValidServers = newServers.filter((server) => {
+			const isLocal = localIps.has(server.host)
+			console.log(`[amebaRemote-DEBUG] -> Checking server "${server.name}" (${server.host}). Is local? ${isLocal}`)
+			if (isLocal) {
+				console.log(`[amebaRemote] Ignoring server "${server.name}" (${server.host}) because it is a local IP.`)
+			}
+			return !isLocal
+		})
+
+		const newServerHosts = new Set(newValidServers.map((s) => s.host))
 		const oldServerHosts = new Set(this.servers.map((s) => s.host))
 
 		// 找出被刪除的伺服器並清理資源
@@ -32,7 +56,7 @@ export class AmebaRemoteSerialPort {
 		}
 
 		// 更新內部伺服器列表
-		this.servers = newServers
+		this.servers = newValidServers
 
 		// 為新增或已存在的伺服器初始化或確認連線
 		for (const server of this.servers) {
