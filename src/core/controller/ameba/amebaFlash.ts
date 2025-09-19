@@ -161,6 +161,37 @@ async function openFlashCfgFileAtLayoutDefinition(filePath: string, definitionLi
 }
 
 /**
+ * Parses the root CMakeLists.txt to find the boot image name.
+ * @param sdkRoot The root directory of the Ameba SDK.
+ * @param icSelection The selected IC (e.g., "amebaL2").
+ * @returns The boot image name (e.g., "amebaL2_boot.bin") or a default if not found.
+ */
+async function getBootImageName(sdkRoot: string, icSelection: string): Promise<string> {
+	const projectDir = path.join(sdkRoot, `${icSelection}_gcc_project`)
+	const cmakeFilePath = path.join(projectDir, "CMakeLists.txt")
+	const defaultBootImageName = "km4_boot_all.bin"
+
+	try {
+		const cmakeContent = await fs.readFile(cmakeFilePath, "utf-8")
+		const bootNameRegex = /\bset\s*\(\s*boot_name\s+([\w._-]+)\s*\)/
+		const match = cmakeContent.match(bootNameRegex)
+
+		if (match && match[1]) {
+			console.log(`Found boot_name in CMakeLists.txt: ${match[1]}`)
+			return match[1]
+		} else {
+			console.log(`'boot_name' not found in ${cmakeFilePath}, using default: ${defaultBootImageName}`)
+			return defaultBootImageName
+		}
+	} catch (error) {
+		console.warn(
+			`Could not read ${cmakeFilePath} to determine boot image name. Using default: ${defaultBootImageName}. Error: ${error}`,
+		)
+		return defaultBootImageName
+	}
+}
+
+/**
  * @param sdkRoot
  * @param icSelection
  * @returns image_name
@@ -281,17 +312,17 @@ export async function amebaFlash(controller: Controller, _request: EmptyRequest)
 		}
 
 		let bootImageName: string
-		if (icSelection == "amebagreen2") {
-			bootImageName = "amebagreen2_boot.bin"
-			console.log(`Amebageen2 boot name`)
-		} else if (icSelection == "amebaL2") {
-			bootImageName = "amebaL2_boot.bin"
-			console.log(`Ameba L2 boot name`)
-		} else if (icSelection == "RTL8720F") {
-			bootImageName = "RTL8720F_boot.bin"
-			console.log(`Ameba RTL8720F boot name`)
-		} else {
-			bootImageName = "km4_boot_all.bin"
+		try {
+			bootImageName = await getBootImageName(sdkRoot, icSelection)
+			console.log(`Successfully parsed boot image name: ${bootImageName}`)
+		} catch (error) {
+			// getBootImageName is designed to not throw, but we catch just in case.
+			const userMessage = error instanceof Error ? error.message : String(error)
+			HostProvider.window.showMessage({
+				type: ShowMessageType.ERROR,
+				message: `Failed to determine boot image name: ${userMessage}`,
+			})
+			return Empty.create({})
 		}
 
 		// 4. 获取app固件名
