@@ -7,6 +7,14 @@ import { useExtensionState } from "@/context/ExtensionStateContext"
 import { AmebaServiceClient } from "@/services/grpc-client"
 import Tooltip from "../common/Tooltip"
 
+const IC_MAPPING: { [internalName: string]: string[] } = {
+	amebasmart: ["RTL8730E"],
+	amebadplus: ["RTL8721Dx"],
+	amebalite: ["RTL8720E", "RTL8726E", "RTL8713E"],
+	amebagreen2: ["RTL8721F"],
+	amebad: ["RTL872xD"],
+}
+
 // --- 全局容器與行列樣式 ---
 const Container = styled.div`
 	display: flex;
@@ -65,6 +73,10 @@ const DropdownTriggerButton = styled.button`
 	padding: 2px 4px;
 	transition: all 0.2s ease;
 	cursor: pointer;
+
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 
 	&:hover:not(:disabled) {
 		color: var(--vscode-foreground);
@@ -275,17 +287,60 @@ const AmebaServiceModal: React.FC = () => {
 	const isAmebaSdkReady = !!(amebaSdkRoot && amebaToolChainEnv)
 	const FONT_STYLE = "12px var(--vscode-font-family, sans-serif)"
 
+	const { internalToDisplayMap, displayToInternalMap } = useMemo(() => {
+		const internalToDisplay: { [key: string]: string } = {}
+		const displayToInternal: { [key: string]: string } = {}
+
+		// 1. 先從靜態 IC_MAPPING 填入已知的對應關係
+		for (const internalName in IC_MAPPING) {
+			const displayNames = IC_MAPPING[internalName]
+			if (displayNames.length > 0) {
+				internalToDisplay[internalName] = displayNames[0] // 將第一個設為預設顯示名稱
+				for (const displayName of displayNames) {
+					displayToInternal[displayName] = internalName
+				}
+			}
+		}
+
+		// 2. 遍歷後端提供的所有晶片列表，為未被映射的晶片添加備用(fallback)對應
+		if (amebaIcVariants) {
+			for (const internalName of amebaIcVariants) {
+				if (!internalToDisplay[internalName]) {
+					// 如果這個 internalName 沒有在 IC_MAPPING 中定義
+					internalToDisplay[internalName] = internalName // 顯示名稱就是它自己
+					displayToInternal[internalName] = internalName // 點擊它自己，發送的也是它自己
+				}
+			}
+		}
+
+		return { internalToDisplayMap: internalToDisplay, displayToInternalMap: displayToInternal }
+	}, [amebaIcVariants]) // 當後端晶片列表更新時，重新計算
+
+	const icDropdownOptions = useMemo(() => {
+		if (!amebaIcVariants) return []
+		// 根據 amebaIcVariants 和映射關係，生成最終的下拉選單選項（顯示名稱列表）
+		return amebaIcVariants.flatMap((internalName) => IC_MAPPING[internalName] || [internalName])
+	}, [amebaIcVariants])
+
+	const selectedIcDisplayName = useMemo(() => {
+		if (!amebaIcSelection) return "Select Chip"
+		// 使用新的、保證完整的 Map 來查找顯示名稱
+		return internalToDisplayMap[amebaIcSelection] || amebaIcSelection
+	}, [amebaIcSelection, internalToDisplayMap])
+
 	// --- 寬度計算 ---
 	const longestIcWidth = useMemo(() => {
-		if (!amebaIcVariants || amebaIcVariants.length === 0) {
+		if (icDropdownOptions.length === 0) {
 			return "75px"
 		}
-		const longestVariant = amebaIcVariants.reduce((a, b) => (a.length > b.length ? a : b), "")
+		const longestVariant = icDropdownOptions.reduce((a, b) => (a.length > b.length ? a : b), "")
 		return calculateTextWidth(longestVariant, FONT_STYLE)
-	}, [amebaIcVariants])
+	}, [icDropdownOptions])
+
 	const selectedIcWidth = useMemo(() => {
-		return calculateTextWidth(amebaIcSelection || "Select Chip", FONT_STYLE)
-	}, [amebaIcSelection])
+		return calculateTextWidth(selectedIcDisplayName, FONT_STYLE)
+	}, [selectedIcDisplayName])
+
 	const icButtonWidth = isIcDropdownOpen ? longestIcWidth : selectedIcWidth
 
 	const longestPortWidth = useMemo(() => {
@@ -362,11 +417,14 @@ const AmebaServiceModal: React.FC = () => {
 	const handlePortDropdownToggle = () => setIsPortDropdownOpen((c) => !c)
 	const handleExampleDropdownToggle = () => setIsExampleDropdownOpen((c) => !c)
 
-	const handleIcSelection = async (newIc: string) => {
+	const handleIcSelection = async (selectedDisplayName: string) => {
 		icDropdownRef.current?.querySelector("button")?.blur()
-		if (newIc && newIc !== amebaIcSelection) {
+
+		const internalName = displayToInternalMap[selectedDisplayName]
+
+		if (internalName && internalName !== amebaIcSelection) {
 			try {
-				await AmebaServiceClient.amebaUpdateChipSelection(StringRequest.create({ value: newIc }))
+				await AmebaServiceClient.amebaUpdateChipSelection(StringRequest.create({ value: internalName }))
 			} catch (error) {
 				console.error("Failed to update Ameba Chip selection:", error)
 			}
@@ -517,13 +575,13 @@ const AmebaServiceModal: React.FC = () => {
 							disabled={!isAmebaSdkReady}
 							onClick={handleIcDropdownToggle}
 							style={{ minWidth: icButtonWidth }}>
-							{amebaIcSelection || "Select Chip"}
+							{selectedIcDisplayName || "Select Chip"}
 						</DropdownTriggerButton>
 						{isIcDropdownOpen && (
 							<DropdownListbox style={{ minWidth: longestIcWidth }}>
-								{(amebaIcVariants || []).map((variant) => (
-									<DropdownOption key={variant} onClick={() => handleIcSelection(variant)}>
-										{variant}
+								{icDropdownOptions.map((displayName) => (
+									<DropdownOption key={displayName} onClick={() => handleIcSelection(displayName)}>
+										{displayName}
 									</DropdownOption>
 								))}
 							</DropdownListbox>
