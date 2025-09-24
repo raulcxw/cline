@@ -641,60 +641,63 @@ export class AmebaEnvManager {
 
 	private async parseAmebaExamplesRecursively(sdkRoot: string): Promise<AmebaExample[]> {
 		console.log("[Ameba SDK] Starting dynamic example parsing...")
-		this.activeExampleRoots = {} // 每次解析前清空
+		this.activeExampleRoots = {}
 		const collectedExamples: AmebaExample[] = []
 
-		// --- 階段一：探測並建立 activeExampleRoots 映射 ---
+		// --- 階段一：探測並建立 activeExampleRoots 映射 (這部分邏輯不變) ---
 		const logicalCategories = Object.keys(EXAMPLE_LOGICAL_SEARCH_PATHS)
-
 		for (const category of logicalCategories) {
-			if (category === "example") continue // 'example' 稍後特殊處理
-
+			if (category === "example") continue
 			for (const searchPath of EXAMPLE_LOGICAL_SEARCH_PATHS[category]) {
 				const fullPath = path.join(sdkRoot, searchPath)
 				if (await fileExistsAtPath(fullPath)) {
-					this.activeExampleRoots[category] = searchPath // 找到並記錄
+					this.activeExampleRoots[category] = searchPath
 					console.log(`[Ameba SDK] Found active root for '${category}': ${searchPath}`)
-					break // 找到後不再查找此分類的其他路徑
+					break
 				}
 			}
 		}
-		// 'example' 分類永遠存在
 		this.activeExampleRoots["example"] = EXAMPLE_LOGICAL_SEARCH_PATHS["example"][0]
-
 		console.log("[Ameba SDK] Active example roots detected:", this.activeExampleRoots)
 
-		// --- 階段二：根據映射結果，掃描並收集範例 ---
+		// --- 階段二：掃描與收集 ---
 
-		// 遞迴輔助函式（與之前版本類似，但現在基於 activeExampleRoots）
+		// [已修正] 遞迴輔助函式，增加了 'else' 來阻止過度遞迴
 		const findExamples = async (currentDir: string, logicalPrefix: string, relativePathParts: string[]): Promise<void> => {
-			// ... (這部分邏輯與上個版本的實作完全相同)
-			const isExample = await fileExistsAtPath(path.join(currentDir, "CMakeLists.txt"))
-			if (isExample) {
+			// 檢查此目錄是否是範例的根目錄
+			if (await fileExistsAtPath(path.join(currentDir, "CMakeLists.txt"))) {
+				// 是範例，添加它，然後停止深入此路徑
 				const pathParts = logicalPrefix ? [logicalPrefix, ...relativePathParts] : relativePathParts
 				collectedExamples.push({
 					name: relativePathParts[relativePathParts.length - 1],
 					path: pathParts.join("/"),
 					category: pathParts.slice(0, -1).join("/"),
 				})
-			}
-			try {
-				const entries = await fs.readdir(currentDir, { withFileTypes: true })
-				for (const entry of entries) {
-					if (entry.isDirectory()) {
-						await findExamples(path.join(currentDir, entry.name), logicalPrefix, [...relativePathParts, entry.name])
+			} else {
+				// 不是範例，則繼續掃描其子目錄
+				try {
+					const entries = await fs.readdir(currentDir, { withFileTypes: true })
+					for (const entry of entries) {
+						if (entry.isDirectory()) {
+							// 繼續傳遞相同的 logicalPrefix
+							await findExamples(path.join(currentDir, entry.name), logicalPrefix, [
+								...relativePathParts,
+								entry.name,
+							])
+						}
 					}
+				} catch (error) {
+					/* 忽略無法讀取的目錄 */
 				}
-			} catch (error) {
-				/* ... */
 			}
 		}
 
-		// [關鍵] 找出在舊版 SDK 中被 'example' 目錄包含的分類
+		// [關鍵] 找出在舊版 SDK 中被 'example' 目錄包含的所有子目錄名稱
 		const claimedSubDirs = new Set<string>()
 		for (const category in this.activeExampleRoots) {
 			const activePath = this.activeExampleRoots[category]
-			if (activePath.startsWith("component/example/")) {
+			// 檢查是否是 component/example 的直接子目錄
+			if (activePath.startsWith("component/example/") && activePath.split("/").length === 3) {
 				// e.g., 'component/example/audio' -> 'audio'
 				const subDirName = activePath.split("/")[2]
 				claimedSubDirs.add(subDirName)
@@ -706,29 +709,32 @@ export class AmebaEnvManager {
 			const examplesBasePath = path.join(sdkRoot, activePath)
 			const prefixToUse = category === "example" ? "" : category
 
+			// [關鍵修正] 不再直接遞迴，而是遍歷頂層目錄，讓 findExamples 處理遞迴
 			try {
 				const topLevelEntries = await fs.readdir(examplesBasePath, { withFileTypes: true })
 				for (const entry of topLevelEntries) {
-					// [關鍵] 如果是掃描 'example' 根目錄，則跳過已被其他分類認領的子目錄
+					if (!entry.isDirectory()) continue
+
+					// 如果是 'example' 的通用掃描，則必須跳過已被其他分類「認領」的目錄
 					if (category === "example" && claimedSubDirs.has(entry.name)) {
-						console.log(
-							`[Ameba SDK] Skipping '${entry.name}' in 'component/example' as it is claimed by another category.`,
-						)
+						console.log(`[Ameba SDK] Skipping '${entry.name}' in general scan as it's a dedicated category.`)
 						continue
 					}
 
-					if (entry.isDirectory()) {
-						await findExamples(path.join(examplesBasePath, entry.name), prefixToUse, [entry.name])
-					}
+					// 從這裡啟動遞迴掃描
+					await findExamples(path.join(examplesBasePath, entry.name), prefixToUse, [entry.name])
 				}
 			} catch (error) {
-				/* ... */
+				/* 忽略無法讀取的目錄 */
 			}
 		})
 
 		await Promise.all(scanTasks)
 
-		console.log(`[Ameba SDK] Found ${collectedExamples.length} compatible examples.`)
-		return collectedExamples.sort((a, b) => a.path.localeCompare(b.path))
+		// 使用 Set 去除可能由未知邊界情況產生的重複項，作為最後一道防線
+		const uniqueExamples = Array.from(new Map(collectedExamples.map((e) => [e.path, e])).values())
+
+		console.log(`[Ameba SDK] Found ${uniqueExamples.length} compatible examples.`)
+		return uniqueExamples.sort((a, b) => a.path.localeCompare(b.path))
 	}
 }
