@@ -50,7 +50,7 @@ export class Controller {
 
 	/* realtek ameba add start*/
 	public readonly amebaTerminalManager: TerminalManager
-	private amebaEnvManager: AmebaEnvManager
+	public amebaEnvManager: AmebaEnvManager
 	private amebaRemoteServerManager: AmebaRemoteServerManager
 	private serialPortManager: AmebaSerialPort | undefined
 	private portRefreshInterval: NodeJS.Timeout | undefined

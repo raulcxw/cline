@@ -2,17 +2,18 @@ import { Empty, StringRequest } from "@shared/proto/cline/common"
 import * as fs from "fs/promises"
 import * as path from "path"
 import * as vscode from "vscode" // 導入 vscode 模組
+import { EXAMPLE_LOGICAL_SEARCH_PATHS } from "@/shared/amebaInfo"
 import type { Controller } from "../index"
 
 export async function amebaUpdateExample(controller: Controller, request: StringRequest): Promise<Empty> {
-	const exampleRelativePath = request.value
+	const logicalExamplePath = request.value
 
 	// 1. 更新 Controller 中的狀態
-	console.log(`[gRPC][Ameba] Updating selected example to: '${exampleRelativePath || "None"}'`)
-	await controller.setSelectedAmebaExample(exampleRelativePath)
+	console.log(`[gRPC][Ameba] Updating selected example to: '${logicalExamplePath || "None"}'`)
+	await controller.setSelectedAmebaExample(logicalExamplePath)
 
 	// 2. 如果 exampleRelativePath 為空 (使用者選擇了 "None")，則直接返回
-	if (!exampleRelativePath) {
+	if (!logicalExamplePath) {
 		return Empty.create({})
 	}
 
@@ -22,8 +23,29 @@ export async function amebaUpdateExample(controller: Controller, request: String
 		return Empty.create({})
 	}
 
+	const activeRoots = controller.amebaEnvManager.getActiveExampleRoots()
+	const pathParts = logicalExamplePath.split("/")
+	const potentialPrefix = pathParts[0]
+
+	let realBaseDir: string | undefined
+	let realExampleSubPath: string
+
+	if (potentialPrefix in activeRoots && potentialPrefix !== "example") {
+		realBaseDir = activeRoots[potentialPrefix] // 直接從動態映射中獲取真實的根目錄
+		realExampleSubPath = pathParts.slice(1).join("/")
+	} else {
+		// 否則，它屬於預設的 'example' 分類
+		realBaseDir = activeRoots["example"]
+		realExampleSubPath = logicalExamplePath
+	}
+
+	if (!realBaseDir) {
+		console.error(`[Ameba] Could not determine a valid base directory for the path: ${logicalExamplePath}`)
+		return Empty.create({})
+	}
+
 	// 4. 構造 readme.md 的完整路徑
-	const readmePath = path.join(sdkRoot, "component", "example", exampleRelativePath, "README.md")
+	const readmePath = path.join(sdkRoot, realBaseDir, realExampleSubPath, "README.md")
 
 	// 5. 檢查檔案是否存在，如果存在則打開 Markdown 預覽
 	try {

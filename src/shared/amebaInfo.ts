@@ -37,3 +37,12 @@ export type AmebaExample = {
 	/** 如果是二級目錄，這裡會是父目錄的名稱，例如 "audio" */
 	category?: string
 }
+
+export const EXAMPLE_LOGICAL_SEARCH_PATHS: { [key: string]: string[] } = {
+	audio: ["component/audio/examples", "component/example/audio"],
+	ui: ["component/ui/examples", "component/example/ui"],
+	aivoice: ["component/aivoice/examples", "component/example/aivoice"],
+	tflite_micro: ["component/tflite_micro/examples", "component/example/tflite_micro"],
+
+	example: ["component/example"],
+}

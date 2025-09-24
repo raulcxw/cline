@@ -10,18 +10,19 @@ import * as tar from "tar"
 import * as vscode from "vscode"
 import { Controller } from "@/core/controller" // 為了型別提示
 import { HostProvider } from "@/hosts/host-provider"
-import { AmebaExample } from "@/shared/amebaInfo"
+import { AmebaExample, EXAMPLE_LOGICAL_SEARCH_PATHS } from "@/shared/amebaInfo"
 import { fileExistsAtPath } from "@/utils/fs"
 
 const AMEBA_SDK_MARKERS = ["Realtek_Disclaimer-2019.pdf", "ameba.bat", "ameba.sh"]
 const IGNORED_DIRS = new Set([".git", ".venv", "build"])
-
 export class AmebaEnvManager {
 	private controller: Controller
 	private prebuiltsReminderTimer: NodeJS.Timeout | undefined
 	private isPrebuiltsReminderActive: boolean = false
 	private venvReminderTimer: NodeJS.Timeout | undefined
 	private isVenvReminderActive: boolean = false
+
+	private activeExampleRoots: { [key: string]: string } = {}
 
 	constructor(controller: Controller) {
 		this.controller = controller
@@ -33,7 +34,6 @@ export class AmebaEnvManager {
 	}
 
 	// --- Public API ---
-
 	public async runDetectionAndSetup(): Promise<void> {
 		this.stopPrebuiltsReminder()
 		this.stopVenvReminder()
@@ -635,62 +635,100 @@ export class AmebaEnvManager {
 		})
 	}
 
+	public getActiveExampleRoots(): { [key: string]: string } {
+		return this.activeExampleRoots
+	}
+
 	private async parseAmebaExamplesRecursively(sdkRoot: string): Promise<AmebaExample[]> {
-		const examplesBasePath = path.join(sdkRoot, "component", "example")
+		console.log("[Ameba SDK] Starting dynamic example parsing...")
+		this.activeExampleRoots = {} // 每次解析前清空
 		const collectedExamples: AmebaExample[] = []
 
-		if (!(await fileExistsAtPath(examplesBasePath))) {
-			console.warn(`[Ameba SDK] Example directory not found at: ${examplesBasePath}`)
-			return []
-		}
+		// --- 階段一：探測並建立 activeExampleRoots 映射 ---
+		const logicalCategories = Object.keys(EXAMPLE_LOGICAL_SEARCH_PATHS)
 
-		// 遞迴輔助函式
-		const findExamples = async (currentDir: string, relativePathParts: string[]): Promise<void> => {
-			// 檢查當前目錄是否是一個可編譯的範例（包含 CMakeLists.txt）
+		for (const category of logicalCategories) {
+			if (category === "example") continue // 'example' 稍後特殊處理
+
+			for (const searchPath of EXAMPLE_LOGICAL_SEARCH_PATHS[category]) {
+				const fullPath = path.join(sdkRoot, searchPath)
+				if (await fileExistsAtPath(fullPath)) {
+					this.activeExampleRoots[category] = searchPath // 找到並記錄
+					console.log(`[Ameba SDK] Found active root for '${category}': ${searchPath}`)
+					break // 找到後不再查找此分類的其他路徑
+				}
+			}
+		}
+		// 'example' 分類永遠存在
+		this.activeExampleRoots["example"] = EXAMPLE_LOGICAL_SEARCH_PATHS["example"][0]
+
+		console.log("[Ameba SDK] Active example roots detected:", this.activeExampleRoots)
+
+		// --- 階段二：根據映射結果，掃描並收集範例 ---
+
+		// 遞迴輔助函式（與之前版本類似，但現在基於 activeExampleRoots）
+		const findExamples = async (currentDir: string, logicalPrefix: string, relativePathParts: string[]): Promise<void> => {
+			// ... (這部分邏輯與上個版本的實作完全相同)
 			const isExample = await fileExistsAtPath(path.join(currentDir, "CMakeLists.txt"))
 			if (isExample) {
-				const examplePath = relativePathParts.join("/")
+				const pathParts = logicalPrefix ? [logicalPrefix, ...relativePathParts] : relativePathParts
 				collectedExamples.push({
-					// name 是路徑的最後一部分
 					name: relativePathParts[relativePathParts.length - 1],
-					// path 是完整的相對路徑，用於編譯
-					path: examplePath,
-					// category 是路徑中除最後一部分外的所有部分，用於 UI 分組
-					category: relativePathParts.slice(0, -1).join("/"),
+					path: pathParts.join("/"),
+					category: pathParts.slice(0, -1).join("/"),
 				})
 			}
-
-			// 繼續掃描子目錄，尋找更多範例或分類
 			try {
 				const entries = await fs.readdir(currentDir, { withFileTypes: true })
 				for (const entry of entries) {
 					if (entry.isDirectory()) {
-						const newPath = path.join(currentDir, entry.name)
-						const newRelativePathParts = [...relativePathParts, entry.name]
-						await findExamples(newPath, newRelativePathParts)
+						await findExamples(path.join(currentDir, entry.name), logicalPrefix, [...relativePathParts, entry.name])
 					}
 				}
 			} catch (error) {
-				console.error(`[Ameba SDK] Error reading directory ${currentDir}:`, error)
+				/* ... */
 			}
 		}
 
-		// 從 component/example 目錄開始掃描
-		try {
-			const topLevelEntries = await fs.readdir(examplesBasePath, { withFileTypes: true })
-			for (const entry of topLevelEntries) {
-				if (entry.isDirectory()) {
-					await findExamples(path.join(examplesBasePath, entry.name), [entry.name])
+		// [關鍵] 找出在舊版 SDK 中被 'example' 目錄包含的分類
+		const claimedSubDirs = new Set<string>()
+		for (const category in this.activeExampleRoots) {
+			const activePath = this.activeExampleRoots[category]
+			if (activePath.startsWith("component/example/")) {
+				// e.g., 'component/example/audio' -> 'audio'
+				const subDirName = activePath.split("/")[2]
+				claimedSubDirs.add(subDirName)
+			}
+		}
+
+		// 根據探測結果執行掃描
+		const scanTasks = Object.entries(this.activeExampleRoots).map(async ([category, activePath]) => {
+			const examplesBasePath = path.join(sdkRoot, activePath)
+			const prefixToUse = category === "example" ? "" : category
+
+			try {
+				const topLevelEntries = await fs.readdir(examplesBasePath, { withFileTypes: true })
+				for (const entry of topLevelEntries) {
+					// [關鍵] 如果是掃描 'example' 根目錄，則跳過已被其他分類認領的子目錄
+					if (category === "example" && claimedSubDirs.has(entry.name)) {
+						console.log(
+							`[Ameba SDK] Skipping '${entry.name}' in 'component/example' as it is claimed by another category.`,
+						)
+						continue
+					}
+
+					if (entry.isDirectory()) {
+						await findExamples(path.join(examplesBasePath, entry.name), prefixToUse, [entry.name])
+					}
 				}
+			} catch (error) {
+				/* ... */
 			}
-		} catch (error) {
-			console.error("[Ameba SDK] Failed to parse examples:", error)
-			return [] // 出錯時回傳空陣列
-		}
+		})
 
-		console.log(`[Ameba SDK] Found ${collectedExamples.length} examples.`)
+		await Promise.all(scanTasks)
 
-		// 按照完整的相對路徑排序，確保 UI 顯示順序穩定
+		console.log(`[Ameba SDK] Found ${collectedExamples.length} compatible examples.`)
 		return collectedExamples.sort((a, b) => a.path.localeCompare(b.path))
 	}
 }
