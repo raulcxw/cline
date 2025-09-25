@@ -3,6 +3,7 @@ import * as path from "path"
 import { HostProvider } from "@/hosts/host-provider"
 import { ShowMessageType } from "@/shared/proto/host/window"
 import type { Controller } from "../index"
+import { amebaTerminalCheck } from "./amebaTerminalCheck"
 
 export async function amebaMonitor(controller: Controller, _request: EmptyRequest): Promise<Empty> {
 	try {
@@ -43,6 +44,11 @@ export async function amebaMonitor(controller: Controller, _request: EmptyReques
 		const monitorProjectDirName = `${icSelection}_gcc_project`
 		const monitorDir = path.join(sdkRoot, monitorProjectDirName)
 
+		const isSafeToProceed = await amebaTerminalCheck(monitorDir)
+		if (!isSafeToProceed) {
+			return Empty.create({})
+		}
+
 		// 4. Define the build command.
 		const effectivePort = serialPort.isRemote ? path.basename(serialPort.path) : serialPort.path
 
@@ -53,12 +59,12 @@ export async function amebaMonitor(controller: Controller, _request: EmptyReques
 			baudrate = "-b 1500000"
 		}
 
-		const commandParts: string[] = ["python", "monitor.py", "-b 1500000", "--port", effectivePort, "-reset "]
+		const commandParts: string[] = ["python", "monitor.py", "-b 1500000", "--port", effectivePort, "-reset"]
 
 		if (serialPort.isRemote) {
 			const remoteHost = serialPort.host
 			const remotePort = 58916
-			commandParts.push("--remote-server", remoteHost, "--remote-port", String(remotePort))
+			commandParts.push("--remote-server", remoteHost)
 		}
 
 		const monitorCommand = commandParts.join(" ")

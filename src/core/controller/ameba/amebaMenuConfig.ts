@@ -3,6 +3,7 @@ import * as path from "path"
 import { HostProvider } from "@/hosts/host-provider"
 import { ShowMessageType } from "@/shared/proto/host/window"
 import type { Controller } from "../index"
+import { amebaTerminalCheck } from "./amebaTerminalCheck" // <-- 請根據您的檔案結構調整此路徑
 
 export async function amebaMenuConfig(controller: Controller, _request: EmptyRequest): Promise<Empty> {
 	try {
@@ -32,6 +33,11 @@ export async function amebaMenuConfig(controller: Controller, _request: EmptyReq
 		// Example: if icSelection is "amebalite", this becomes "amebalite_gcc_project"
 		const MenuconfigProjectDirName = `${icSelection}_gcc_project`
 		const MenuconfigDir = path.join(sdkRoot, MenuconfigProjectDirName)
+
+		const isSafeToProceed = await amebaTerminalCheck(MenuconfigDir)
+		if (!isSafeToProceed) {
+			return Empty.create({})
+		}
 
 		// 4. Define the build command.
 		const MenuconfigScriptName = "python menuconfig.py"

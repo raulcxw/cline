@@ -102,6 +102,8 @@ export class TerminalRegistry {
 			!TerminalRegistry.isTerminalClosed(TerminalRegistry.amebaTerminalInfo.terminal)
 		) {
 			console.log("Reusing tracked Ameba terminal.")
+			const trackedTerminal = TerminalRegistry.amebaTerminalInfo.terminal
+			trackedTerminal.sendText(String.fromCharCode(3), false)
 			TerminalRegistry.amebaTerminalInfo.terminal.show()
 			return TerminalRegistry.amebaTerminalInfo
 		}
@@ -113,6 +115,7 @@ export class TerminalRegistry {
 		if (existingVscodeTerminal) {
 			console.log("Found existing Ameba terminal in VS Code list. Re-attaching.")
 			terminal = existingVscodeTerminal
+			terminal.sendText(String.fromCharCode(3), false)
 		} else {
 			console.log("No active Ameba terminal found. Creating a new one.")
 

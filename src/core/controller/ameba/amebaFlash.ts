@@ -4,6 +4,7 @@ import * as path from "path"
 import { HostProvider } from "@/hosts/host-provider"
 import { ShowMessageType } from "@/shared/proto/host/window"
 import type { Controller } from "../index"
+import { amebaTerminalCheck } from "./amebaTerminalCheck"
 
 interface FlashRegionInfo {
 	type: string
@@ -285,6 +286,14 @@ export async function amebaFlash(controller: Controller, _request: EmptyRequest)
 			return Empty.create({})
 		}
 
+		const flashProjectDirName = `${icSelection}_gcc_project`
+		const flashDir = path.join(sdkRoot, flashProjectDirName)
+
+		const isSafeToProceed = await amebaTerminalCheck(flashDir)
+		if (!isSafeToProceed) {
+			return Empty.create({})
+		}
+
 		// 2. 解析 ameba_flashcfg.c
 		const flashCfgPath = path.join(sdkRoot, "component", "soc", "usrcfg", icSelection, "ameba_flashcfg.c")
 		let parseResult: FlashLayoutParseResult
@@ -336,10 +345,6 @@ export async function amebaFlash(controller: Controller, _request: EmptyRequest)
 			return Empty.create({})
 		}
 
-		// 5. 烧录目录和命令组合
-		const flashProjectDirName = `${icSelection}_gcc_project`
-		const flashDir = path.join(sdkRoot, flashProjectDirName)
-
 		// 6. 获取烧录的固件和offset
 		const imageTypeToFileName = new Map<string, string>([
 			["IMG_BOOT", bootImageName],
@@ -354,7 +359,7 @@ export async function amebaFlash(controller: Controller, _request: EmptyRequest)
 		if (serialPort.isRemote) {
 			const remoteHost = serialPort.host
 			const remotePort = 58916
-			commandParts.push("--remote-server", remoteHost, "--remote-port", String(remotePort))
+			commandParts.push("--remote-server", remoteHost)
 		}
 
 		for (const currentRegion of parseResult.layout) {

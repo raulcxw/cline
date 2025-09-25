@@ -3,6 +3,7 @@ import * as path from "path"
 import { HostProvider } from "@/hosts/host-provider"
 import { ShowMessageType } from "@/shared/proto/host/window"
 import type { Controller } from "../index"
+import { amebaTerminalCheck } from "./amebaTerminalCheck"
 
 export async function amebaBuild(controller: Controller, _request: EmptyRequest): Promise<Empty> {
 	try {
@@ -33,6 +34,11 @@ export async function amebaBuild(controller: Controller, _request: EmptyRequest)
 		// Example: if icSelection is "amebalite", this becomes "amebalite_gcc_project"
 		const buildProjectDirName = `${icSelection}_gcc_project`
 		const buildDir = path.join(sdkRoot, buildProjectDirName)
+
+		const isSafeToProceed = await amebaTerminalCheck(buildDir)
+		if (!isSafeToProceed) {
+			return Empty.create({})
+		}
 
 		// 4. Define the build command.
 		let buildCommand = "python build.py"
