@@ -3,7 +3,7 @@ import * as path from "path"
 import { HostProvider } from "@/hosts/host-provider"
 import { ShowMessageType } from "@/shared/proto/host/window"
 import type { Controller } from "../index"
-import { amebaTerminalCheck } from "./amebaTerminalCheck" // <-- 請根據您的檔案結構調整此路徑
+import { amebaTerminalCheck } from "./amebaTerminalCheck"
 
 export async function amebaMenuConfig(controller: Controller, _request: EmptyRequest): Promise<Empty> {
 	try {

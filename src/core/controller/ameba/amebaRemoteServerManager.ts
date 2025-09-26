@@ -18,7 +18,7 @@ export class AmebaRemoteServerManager {
 			{ label: "$(add) Add New Remote Server", description: "Configure a new server connection", action: "add" },
 			...servers.map((s) => ({
 				label: `$(server) ${s.name}`,
-				description: `${s.host}:${s.port}`,
+				description: s.pw ? `IP: ${s.host} Password: ${s.pw}` : `IP: ${s.host}`,
 				detail: "Select to delete this server.",
 				host: s.host,
 				action: "delete" as const,
@@ -112,11 +112,16 @@ export class AmebaRemoteServerManager {
 			prompt: "Enter the server's password",
 		})
 
+		const pw = pwResult.response?.trim()
+		if (!pw) {
+			return
+		}
+
 		console.log(`Remote server pw ${pwResult.response}`)
 
 		const port = 58916
 
-		const newServer: AmebaRemoteServer = { name, host, port }
+		const newServer: AmebaRemoteServer = { name, host, pw, port }
 		await this.controller.saveAmebaRemoteServers([...currentServers, newServer])
 		HostProvider.window.showMessage({ type: ShowMessageType.INFORMATION, message: `Remote server "${name}" added.` })
 	}

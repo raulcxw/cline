@@ -10,6 +10,7 @@ export interface AmebaRemoteSerialPortServerConfig {
 export interface AmebaRemoteServer {
 	name: string
 	host: string
+	pw: string
 	port: number
 }
 

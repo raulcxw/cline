@@ -34,7 +34,7 @@ export async function amebaMonitor(controller: Controller, _request: EmptyReques
 		if (!serialPort) {
 			HostProvider.window.showMessage({
 				type: ShowMessageType.ERROR,
-				message: "Serial Port not selected. Please select serial port",
+				message: "Serial Port not selected.",
 			})
 			return Empty.create({})
 		}

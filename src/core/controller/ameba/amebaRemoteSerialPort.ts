@@ -4,14 +4,18 @@ import { AmebaRemoteServer, RemotePortInfo } from "@/shared/amebaInfo"
 
 export type ServerConfigs = AmebaRemoteServer[]
 
-export type TcpMessage = { type: "com_ports_update"; ports: string[] } | { type: "list_com_ports" }
+export type TcpMessage =
+	| { type: "com_ports_update"; ports: string[] }
+	| { type: "list_com_ports" }
+	| { type: "validate"; password: string }
+	| { type: "command_response"; success: boolean }
 
 function getLocalIpAddresses(): Set<string> {
 	const networkInterfaces = os.networkInterfaces()
 	const allAddresses = Object.values(networkInterfaces).flat()
 
 	const ipv4Addresses = allAddresses
-		.filter((details) => details && details.family === "IPv4" && !details.internal)
+		.filter((details) => details && details.family === "IPv6" && !details.internal)
 		.map((details) => details!.address)
 
 	// 也包含本地回環地址，以防萬一
@@ -24,6 +28,7 @@ export class AmebaRemoteSerialPort {
 	// [修改] 所有 Map 的鍵都改為 string (host)
 	private tcpClients: Map<string, net.Socket> = new Map()
 	private isConnected: Map<string, boolean> = new Map()
+	private isAuthenticated: Map<string, boolean> = new Map()
 	private remotePorts: Map<string, RemotePortInfo[]> = new Map()
 	private reconnectIntervals: Map<string, NodeJS.Timeout> = new Map()
 	private onPortsChanged: () => void
@@ -82,7 +87,22 @@ export class AmebaRemoteSerialPort {
 		client.on("connect", () => {
 			this.isConnected.set(server.host, true)
 			console.log(`[amebaRemote] Connected to ${server.name} (${server.host}:${server.port})`)
-			this.requestRemotePorts(server.host)
+
+			const existingTimer = this.reconnectIntervals.get(server.host)
+			if (existingTimer) {
+				clearInterval(existingTimer)
+				this.reconnectIntervals.delete(server.host)
+			}
+
+			if (server.pw) {
+				console.log(`[amebaRemote] Server "${server.name}" requires authentication. Sending password...`)
+				const authMessage: TcpMessage = { type: "validate", password: server.pw }
+				client.write(JSON.stringify(authMessage) + "\n", "utf-8")
+			} else {
+				console.log(`[amebaRemote] Server "${server.name}" does not require authentication.`)
+				this.isAuthenticated.set(server.host, true)
+				this.requestRemotePorts(server.host)
+			}
 		})
 
 		let buffer = ""
@@ -167,27 +187,48 @@ export class AmebaRemoteSerialPort {
 	}
 
 	private handleServerMessage(server: AmebaRemoteServer, messageStr: string): void {
+		if (!messageStr) return
 		try {
 			const message = JSON.parse(messageStr) as TcpMessage
-			if (message.type === "com_ports_update") {
-				const newRemotePorts: RemotePortInfo[] = message.ports.map((port) => ({
-					path: `R:/${server.host}/${port}`, // [修改] 使用 host 建立路徑
-					host: server.host,
-					serverName: server.name,
-				}))
 
-				const currentPorts = this.remotePorts.get(server.host) || []
-				if (JSON.stringify(newRemotePorts) !== JSON.stringify(currentPorts)) {
-					this.remotePorts.set(server.host, newRemotePorts)
-					this.onPortsChanged()
-				}
+			switch (message.type) {
+				case "command_response":
+					if (!this.isAuthenticated.get(server.host)) {
+						if (message.success) {
+							console.log(`[amebaRemote] Authentication successful for ${server.name}.`)
+							this.isAuthenticated.set(server.host, true)
+							this.requestRemotePorts(server.host)
+						} else {
+							console.error(
+								`[amebaRemote] Authentication failed for ${server.name} (wrong password). Closing connection.`,
+							)
+							this.tcpClients.get(server.host)?.destroy()
+						}
+					}
+					break
+
+				case "com_ports_update":
+					// 只有在已認證的情況下才處理端口更新
+					if (this.isAuthenticated.get(server.host)) {
+						const newRemotePorts: RemotePortInfo[] = message.ports.map((port) => ({
+							path: `R:/${server.host}/${port}`,
+							host: server.host,
+							serverName: server.name,
+						}))
+
+						const currentPorts = this.remotePorts.get(server.host) || []
+						if (JSON.stringify(newRemotePorts) !== JSON.stringify(currentPorts)) {
+							this.remotePorts.set(server.host, newRemotePorts)
+							this.onPortsChanged()
+						}
+					}
+					break
 			}
 		} catch (err) {
-			console.error(`[amebaRemote] Invalid message from ${server.name}:`, err)
+			console.error(`[amebaRemote] Invalid message from ${server.name}:`, messageStr, err)
 		}
 	}
 
-	// [修改] 參數從 serverId 改為 host
 	public requestRemotePorts(host: string): void {
 		const client = this.tcpClients.get(host)
 		if (!client || !this.isConnected.get(host)) {
