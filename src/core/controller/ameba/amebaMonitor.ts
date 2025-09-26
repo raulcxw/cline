@@ -63,8 +63,10 @@ export async function amebaMonitor(controller: Controller, _request: EmptyReques
 
 		if (serialPort.isRemote) {
 			const remoteHost = serialPort.host
-			const remotePort = 58916
 			commandParts.push("--remote-server", remoteHost)
+			if (serialPort.pw) {
+				commandParts.push("--remote-password", serialPort.pw)
+			}
 		}
 
 		const monitorCommand = commandParts.join(" ")

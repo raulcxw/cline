@@ -358,8 +358,10 @@ export async function amebaFlash(controller: Controller, _request: EmptyRequest)
 
 		if (serialPort.isRemote) {
 			const remoteHost = serialPort.host
-			const remotePort = 58916
 			commandParts.push("--remote-server", remoteHost)
+			if (serialPort.pw) {
+				commandParts.push("--remote-password", serialPort.pw)
+			}
 		}
 
 		for (const currentRegion of parseResult.layout) {

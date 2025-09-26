@@ -10,7 +10,7 @@ export interface AmebaRemoteSerialPortServerConfig {
 export interface AmebaRemoteServer {
 	name: string
 	host: string
-	pw: string
+	pw?: string
 	port: number
 }
 
@@ -22,12 +22,14 @@ export type RemotePortInfo = {
 	path: string
 	host: string // [修改] 使用 host 作為唯一標識
 	serverName: string
+	pw?: string
 }
 
 export type AmebaPortInfo = (LocalPortInfo | RemotePortInfo) & {
 	isRemote: boolean
 	serverName: string
 	host: string
+	pw?: string
 }
 
 export type AmebaExample = {

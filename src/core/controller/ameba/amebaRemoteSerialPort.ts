@@ -1,5 +1,7 @@
 import * as net from "node:net"
 import * as os from "node:os"
+import { ShowMessageType } from "@shared/proto/host/window"
+import { HostProvider } from "@/hosts/host-provider"
 import { AmebaRemoteServer, RemotePortInfo } from "@/shared/amebaInfo"
 
 export type ServerConfigs = AmebaRemoteServer[]
@@ -8,14 +10,14 @@ export type TcpMessage =
 	| { type: "com_ports_update"; ports: string[] }
 	| { type: "list_com_ports" }
 	| { type: "validate"; password: string }
-	| { type: "command_response"; success: boolean }
+	| { type: "command_response"; success: boolean; message?: string }
 
 function getLocalIpAddresses(): Set<string> {
 	const networkInterfaces = os.networkInterfaces()
 	const allAddresses = Object.values(networkInterfaces).flat()
 
 	const ipv4Addresses = allAddresses
-		.filter((details) => details && details.family === "IPv6" && !details.internal)
+		.filter((details) => details && details.family === "IPv4" && !details.internal)
 		.map((details) => details!.address)
 
 	// 也包含本地回環地址，以防萬一
@@ -31,6 +33,7 @@ export class AmebaRemoteSerialPort {
 	private isAuthenticated: Map<string, boolean> = new Map()
 	private remotePorts: Map<string, RemotePortInfo[]> = new Map()
 	private reconnectIntervals: Map<string, NodeJS.Timeout> = new Map()
+	private passwordErrorNotified: Map<string, boolean> = new Map()
 	private onPortsChanged: () => void
 
 	// [修改] 簡化構造函數
@@ -83,6 +86,7 @@ export class AmebaRemoteSerialPort {
 		client.setKeepAlive(true, 30000)
 		this.tcpClients.set(server.host, client)
 		this.isConnected.set(server.host, false)
+		this.passwordErrorNotified.set(server.host, false)
 
 		client.on("connect", () => {
 			this.isConnected.set(server.host, true)
@@ -93,6 +97,8 @@ export class AmebaRemoteSerialPort {
 				clearInterval(existingTimer)
 				this.reconnectIntervals.delete(server.host)
 			}
+
+			//this.passwordErrorNotified.set(server.host, false)
 
 			if (server.pw) {
 				console.log(`[amebaRemote] Server "${server.name}" requires authentication. Sending password...`)
@@ -117,16 +123,19 @@ export class AmebaRemoteSerialPort {
 
 		client.on("close", () => {
 			this.isConnected.set(server.host, false)
+			this.isAuthenticated.set(server.host, false)
 			console.log(`[amebaRemote] Disconnected from ${server.name}`)
 			// 清空該伺服器的端口列表並通知更新
 			if (this.remotePorts.get(server.host)?.length) {
 				this.remotePorts.set(server.host, [])
 				this.onPortsChanged()
 			}
+			this.startReconnectTimer(server)
 		})
 
 		client.on("error", (_err) => {
 			// 連線錯誤會觸發 'close' 事件，這裡只記錄日誌即可
+			console.log(`[amebaRemote] error from ${server.name}`)
 		})
 
 		this.connectToServer(server)
@@ -143,9 +152,8 @@ export class AmebaRemoteSerialPort {
 	}
 
 	private startReconnectTimer(server: AmebaRemoteServer): void {
-		const existingTimer = this.reconnectIntervals.get(server.host)
-		if (existingTimer) {
-			clearInterval(existingTimer)
+		if (this.reconnectIntervals.has(server.host)) {
+			return
 		}
 
 		const timer = setInterval(() => this.connectToServer(server), 5000)
@@ -154,16 +162,17 @@ export class AmebaRemoteSerialPort {
 
 	// [修改] 參數從 serverId 改為 host
 	private cleanupServerConnection(host: string): void {
-		this.tcpClients.get(host)?.destroy()
 		const timer = this.reconnectIntervals.get(host)
 		if (timer) {
 			clearInterval(timer)
+			this.reconnectIntervals.delete(host)
 		}
-
+		this.tcpClients.get(host)?.destroy()
 		this.tcpClients.delete(host)
 		this.isConnected.delete(host)
+		this.isAuthenticated.delete(host)
 		this.remotePorts.delete(host)
-		this.reconnectIntervals.delete(host)
+		this.passwordErrorNotified.delete(host)
 		console.log(`[amebaRemote] Cleaned up connection for server: ${host}`)
 	}
 
@@ -193,17 +202,40 @@ export class AmebaRemoteSerialPort {
 
 			switch (message.type) {
 				case "command_response":
-					if (!this.isAuthenticated.get(server.host)) {
-						if (message.success) {
-							console.log(`[amebaRemote] Authentication successful for ${server.name}.`)
-							this.isAuthenticated.set(server.host, true)
-							this.requestRemotePorts(server.host)
-						} else {
-							console.error(
-								`[amebaRemote] Authentication failed for ${server.name} (wrong password). Closing connection.`,
-							)
-							this.tcpClients.get(server.host)?.destroy()
+					if (message.success) {
+						console.log(`[amebaRemote] Authentication successful for ${server.name}.`)
+						this.isAuthenticated.set(server.host, true)
+						this.passwordErrorNotified.set(server.host, false)
+						this.requestRemotePorts(server.host)
+					} else {
+						console.error(
+							`[amebaRemote] Authentication failed for ${server.name}. Reason: ${message.message || "Unknown"}`,
+						)
+
+						// 檢查是否為密碼不匹配，且尚未提示過使用者
+						if (message.message === "Password is mis-matched" && !this.passwordErrorNotified.get(server.host)) {
+							// 設定旗標，防止重複提示
+							this.passwordErrorNotified.set(server.host, true)
+
+							// 透過 HostProvider 顯示一個非強制性的錯誤訊息
+							HostProvider.window.showMessage({
+								type: ShowMessageType.WARNING,
+								message: `Incorrect Password for remote server "${server.name}" (${server.host}) . Please check your settings.`,
+							})
+						} else if (
+							message.message === "Password should be validated first" &&
+							!this.passwordErrorNotified.get(server.host)
+						) {
+							// 設定旗標，防止重複提示
+							this.passwordErrorNotified.set(server.host, true)
+
+							// 透過 HostProvider 顯示一個非強制性的錯誤訊息
+							HostProvider.window.showMessage({
+								type: ShowMessageType.WARNING,
+								message: `Need Password for remote server "${server.name}" (${server.host}). Please check your settings.`,
+							})
 						}
+						this.tcpClients.get(server.host)?.destroy()
 					}
 					break
 
@@ -214,6 +246,7 @@ export class AmebaRemoteSerialPort {
 							path: `R:/${server.host}/${port}`,
 							host: server.host,
 							serverName: server.name,
+							pw: server.pw,
 						}))
 
 						const currentPorts = this.remotePorts.get(server.host) || []

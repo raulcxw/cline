@@ -113,9 +113,6 @@ export class AmebaRemoteServerManager {
 		})
 
 		const pw = pwResult.response?.trim()
-		if (!pw) {
-			return
-		}
 
 		console.log(`Remote server pw ${pwResult.response}`)
 
