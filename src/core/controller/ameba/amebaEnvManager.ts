@@ -15,6 +15,13 @@ import { fileExistsAtPath } from "@/utils/fs"
 
 const AMEBA_SDK_MARKERS = ["Realtek_Disclaimer-2019.pdf", "ameba.bat", "ameba.sh"]
 const IGNORED_DIRS = new Set([".git", ".venv", "build"])
+
+interface DownloadSource {
+	label: string // 用於在下拉選單中顯示的名稱
+	description?: string // 可選的描述
+	url: string // 實際的下載連結
+}
+
 export class AmebaEnvManager {
 	private controller: Controller
 	private prebuiltsReminderTimer: NodeJS.Timeout | undefined
@@ -142,8 +149,8 @@ export class AmebaEnvManager {
 
 			console.warn(`[Ameba SDK] Could not parse version numbers from ${versionFilePath}`)
 			return undefined
-		} catch (error) {
-			console.error(`[Ameba SDK] Error reading or parsing version file:`, error)
+		} catch (_error) {
+			console.error(`[Ameba SDK] Error reading or parsing version file:`, _error)
 			return undefined
 		}
 	}
@@ -158,8 +165,8 @@ export class AmebaEnvManager {
 
 			console.log(`[Ameba SDK] Found IC variants: [${variants.join(", ")}]`)
 			return variants
-		} catch (error) {
-			console.error(`[Ameba SDK] Failed to read IC variants from ${sdkRoot}:`, error)
+		} catch (_error) {
+			console.error(`[Ameba SDK] Failed to read IC variants from ${sdkRoot}:`, _error)
 			return []
 		}
 	}
@@ -255,16 +262,26 @@ export class AmebaEnvManager {
 				this.isPrebuiltsReminderActive = true
 				console.log("[Ameba Env] Starting prebuilts installation reminder loop.")
 				const urls: string[] = []
+				const sources: DownloadSource[] = []
 				if (prebuiltsUrl) {
-					//urls.push(prebuiltsUrl)
+					sources.push({
+						label: "GitHub",
+						description: "(Recommended for users outside of China)",
+						url: prebuiltsUrl,
+					})
 				}
 				if (prebuiltsUrlAliyun) {
-					urls.push(prebuiltsUrlAliyun)
+					//urls.push(prebuiltsUrlAliyun)
+					sources.push({
+						label: "Aliyun",
+						description: "(Recommended for users in China Mainland)",
+						url: prebuiltsUrlAliyun,
+					})
 				}
 				this.promptAndRemindToInstallPrebuilts(
 					prebuiltsVersion,
 					expandedBaseToolchainDir,
-					urls,
+					sources,
 					prebuiltsDir,
 					sdkRoot,
 					platform,
@@ -302,7 +319,7 @@ export class AmebaEnvManager {
 	private async promptAndRemindToInstallPrebuilts(
 		version: string,
 		baseToolchainDir: string,
-		urls: string[],
+		sources: DownloadSource[],
 		finalDirPath: string,
 		sdkRoot: string,
 		platform: NodeJS.Platform,
@@ -316,18 +333,45 @@ export class AmebaEnvManager {
 			await this.checkAndSetupAmebaToolChainEnv(sdkRoot)
 			return
 		}
+
+		if (sources.length === 0) {
+			console.error("[Ameba Env] No download URLs found for prebuilts. Cannot prompt for installation.")
+			this.stopPrebuiltsReminder()
+			return
+		}
+		const buttonItems = sources.map((source) => `Install from ${source.label}`)
+
 		const response = await HostProvider.window.showMessage({
 			type: ShowMessageType.INFORMATION,
 			message: `Ameba Prebuilts (v${version}) is not found. Do you want to download and install it to ${baseToolchainDir}?`,
 			options: {
 				modal: false,
-				items: ["Install Now"],
+				items: buttonItems,
 			},
 		})
-		if (response.selectedOption === "Install Now") {
+		if (response.selectedOption) {
 			this.stopPrebuiltsReminder()
-			await this.downloadAndInstallPrebuilts(urls, baseToolchainDir, finalDirPath, sdkRoot, platform)
+
+			// 3. 從點擊的按鈕文字中找出對應的下載來源
+			const selectedSource = sources.find((source) => response.selectedOption === `Install from ${source.label}`)
+
+			if (selectedSource) {
+				console.log(`[Ameba Env] User selected to install from ${selectedSource.label}, URL:${selectedSource.url}.`)
+				// 將選擇的單一 URL 放入陣列，以符合 downloadAndInstallPrebuilts 的參數格式
+				await this.downloadAndInstallPrebuilts([selectedSource.url], baseToolchainDir, finalDirPath, sdkRoot, platform)
+			} else {
+				// 理論上不應該發生，但作為防禦性程式設計
+				console.log("[Ameba Env] Could not match selected option to a download source.")
+				// 可以選擇重新觸發提示
+				if (!this.isPrebuiltsReminderActive) {
+					this.isPrebuiltsReminderActive = true
+					this.promptAndRemindToInstallPrebuilts(version, baseToolchainDir, sources, finalDirPath, sdkRoot, platform)
+				}
+			}
 		} else {
+			// --- 修改結束 ---
+
+			// 使用者關閉了通知，沒有做任何選擇
 			if (this.isPrebuiltsReminderActive) {
 				console.log("[Ameba Env] User dismissed the prompt. Will remind again in 20 seconds.")
 				if (this.prebuiltsReminderTimer) {
@@ -335,7 +379,14 @@ export class AmebaEnvManager {
 				}
 				this.prebuiltsReminderTimer = setTimeout(
 					() =>
-						this.promptAndRemindToInstallPrebuilts(version, baseToolchainDir, urls, finalDirPath, sdkRoot, platform),
+						this.promptAndRemindToInstallPrebuilts(
+							version,
+							baseToolchainDir,
+							sources,
+							finalDirPath,
+							sdkRoot,
+							platform,
+						),
 					20_000,
 				)
 			}
@@ -385,8 +436,8 @@ export class AmebaEnvManager {
 					message: "Ameba Python virtual environment created successfully.",
 				})
 				await this.controller.setAmebaToolChainEnv(baseToolchainDir)
-			} catch (error) {
-				const errorMessage = error instanceof Error ? error.message : String(error)
+			} catch (_error) {
+				const errorMessage = _error instanceof Error ? _error.message : String(_error)
 				console.error("Failed to setup Ameba Python environment:", errorMessage)
 				HostProvider.window.showMessage({
 					type: ShowMessageType.ERROR,
@@ -505,9 +556,9 @@ export class AmebaEnvManager {
 					},
 				)
 				return
-			} catch (error) {
-				console.error(`Failed to download or install from ${url}:`, error)
-				lastError = error instanceof Error ? error : new Error(String(error))
+			} catch (_error) {
+				console.error(`Failed to download or install from ${url}:`, _error)
+				lastError = _error instanceof Error ? _error : new Error(String(_error))
 			}
 		}
 		if (lastError) {
@@ -516,11 +567,6 @@ export class AmebaEnvManager {
 				message: `Failed to install Ameba toolchain. Error: ${lastError.message}`,
 			})
 			await this.controller.setAmebaToolChainEnv(undefined)
-			if (!this.isPrebuiltsReminderActive) {
-				this.isPrebuiltsReminderActive = true
-				const version = path.basename(finalDirPath).split("-").pop() || ""
-				this.promptAndRemindToInstallPrebuilts(version, targetUnzipDir, urls, finalDirPath, sdkRoot, platform)
-			}
 		}
 	}
 
@@ -686,7 +732,7 @@ export class AmebaEnvManager {
 							])
 						}
 					}
-				} catch (error) {
+				} catch (_error) {
 					/* 忽略無法讀取的目錄 */
 				}
 			}
@@ -724,7 +770,7 @@ export class AmebaEnvManager {
 					// 從這裡啟動遞迴掃描
 					await findExamples(path.join(examplesBasePath, entry.name), prefixToUse, [entry.name])
 				}
-			} catch (error) {
+			} catch (_error) {
 				/* 忽略無法讀取的目錄 */
 			}
 		})

@@ -756,12 +756,12 @@ export class Controller {
 			this.cacheService.setGlobalState("amebaSdkRoot", sdkRoot)
 			console.log(`[Controller] Ameba SDK root updated to: ${sdkRoot}`)
 
-			if (sdkRoot) {
-				HostProvider.window.showMessage({
-					type: ShowMessageType.INFORMATION,
-					message: `Ameba SDK path automatically set to: ${sdkRoot}`,
-				})
-			}
+			//if (false) {
+			//	HostProvider.window.showMessage({
+			//		type: ShowMessageType.INFORMATION,
+			//		message: `Ameba SDK path automatically set to: ${sdkRoot}`,
+			//	})
+			//}
 		}
 	}
 
